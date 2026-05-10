@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSQCAD Clipboard Demo</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f4efe6;
+            --card: rgba(255, 255, 255, 0.88);
+            --text: #1f2933;
+            --muted: #5f6b76;
+            --primary: #0f766e;
+            --border: rgba(15, 118, 110, 0.18);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            padding: 32px;
+            font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(15, 118, 110, 0.16), transparent 36%),
+                linear-gradient(135deg, #f6f2e8, #e9efe9 60%, #dde8e7);
+            color: var(--text);
+        }
+
+        .shell {
+            max-width: 920px;
+            margin: 0 auto;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 28px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 24px 60px rgba(31, 41, 51, 0.12);
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 28px;
+        }
+
+        p {
+            margin: 0 0 16px;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 18px 0;
+        }
+
+        button {
+            border: 0;
+            border-radius: 999px;
+            padding: 12px 18px;
+            background: var(--primary);
+            color: #fff;
+            font-size: 15px;
+            cursor: pointer;
+        }
+
+        button.secondary {
+            background: #d7e9e7;
+            color: #0f4d49;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 360px;
+            padding: 14px;
+            border-radius: 16px;
+            border: 1px solid rgba(95, 107, 118, 0.28);
+            font: 13px/1.6 Consolas, "Courier New", monospace;
+            resize: vertical;
+            background: rgba(255, 255, 255, 0.82);
+        }
+
+        #status {
+            min-height: 24px;
+            font-weight: 600;
+            color: #0f766e;
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <h1>JSQCAD 剪贴板演示页</h1>
+        <p>点击按钮后，会把一段 `JSQCAD:` 前缀的 JSON 写入系统剪贴板。回到 AutoCAD，执行 `JSQPASTE`，即可验证“网页复制 -> CAD 生成图元”这条链是否符合预期。</p>
+        <div class="actions">
+            <button type="button" id="copy-btn">复制到剪贴板</button>
+            <button type="button" class="secondary" id="select-btn">选中文本手动复制</button>
+        </div>
+        <div id="status"></div>
+        <textarea id="payload" spellcheck="false"></textarea>
+    </main>
+    <script>
+        const sample = {
+            format: 'JSQCAD/1.0',
+            units: 'mm',
+            basePoint: [0, 0],
+            layers: [
+                { name: 'JSQ-OUTLINE', colorIndex: 1 },
+                { name: 'JSQ-HOLES', colorIndex: 4 },
+                { name: 'JSQ-FOLD', colorIndex: 2 },
+                { name: 'JSQ-NOTES', colorIndex: 7 }
+            ],
+            entities: [
+                {
+                    type: 'polyline',
+                    layer: 'JSQ-OUTLINE',
+                    closed: true,
+                    vertices: [[0, 0], [850, 0], [850, 1200], [0, 1200]]
+                },
+                {
+                    type: 'circle',
+                    layer: 'JSQ-HOLES',
+                    center: [85, 110],
+                    radius: 8
+                },
+                {
+                    type: 'circle',
+                    layer: 'JSQ-HOLES',
+                    center: [765, 110],
+                    radius: 8
+                },
+                {
+                    type: 'line',
+                    layer: 'JSQ-FOLD',
+                    start: [425, 0],
+                    end: [425, 1200]
+                },
+                {
+                    type: 'text',
+                    layer: 'JSQ-NOTES',
+                    position: [0, -60],
+                    height: 28,
+                    value: 'Demo Panel 850x1200'
+                }
+            ]
+        };
+
+        const rawPayload = 'JSQCAD:' + JSON.stringify(sample, null, 2);
+        const textarea = document.getElementById('payload');
+        const status = document.getElementById('status');
+        textarea.value = rawPayload;
+
+        function setStatus(message, isError) {
+            status.textContent = message;
+            status.style.color = isError ? '#b91c1c' : '#0f766e';
+        }
+
+        async function copyPayload() {
+            try {
+                if (!navigator.clipboard || !navigator.clipboard.writeText) {
+                    throw new Error('当前浏览器不支持直接写入剪贴板');
+                }
+                await navigator.clipboard.writeText(textarea.value);
+                setStatus('已复制到剪贴板，回到 AutoCAD 执行 JSQPASTE。', false);
+            } catch (error) {
+                setStatus(error.message + '，请改用“选中文本手动复制”。', true);
+            }
+        }
+
+        function selectPayload() {
+            textarea.focus();
+            textarea.select();
+            setStatus('文本已选中，按 Ctrl+C 复制。', false);
+        }
+
+        document.getElementById('copy-btn').addEventListener('click', copyPayload);
+        document.getElementById('select-btn').addEventListener('click', selectPayload);
+    </script>
+</body>
+</html>

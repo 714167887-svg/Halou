@@ -1,0 +1,178 @@
+﻿#requires -Version 5.1
+<#
+.SYNOPSIS
+    一键发布 Halou Suite Phase 2 新架构（HalouHost + HalouPayload 热重载）。
+
+.DESCRIPTION
+    流程：
+      1. 改写 Payload/PayloadEntry.cs 的 PayloadVersion 常量
+      2. 调 W/HalouSuite/build-all.ps1 -PayloadVersion <Ver> 编译三件套
+      3. 把 HalouPayload.<Ver>.dll + HalouHost.dll + HalouContract.dll + manifest + license.json 复制到 halou-release/release/
+      4. 更新 license.json：latest_version / download_url / release_notes
+      5. git add / commit / push
+    买家下次启动 acad（或者点「下载新版本」）就能在线热重载，无需关闭 acad。
+
+.PARAMETER Version
+    新版本号，必须严格大于当前 license.json 的 latest_version。例：2.0.1
+
+.PARAMETER Message
+    本次发布说明（写到 license.json 的 release_notes，也作为 git commit message）。
+
+.PARAMETER ReleaseRepo
+    halou-release 的本地克隆路径。默认 C:\Users\Administrator\Desktop\halou-release
+
+.PARAMETER SkipBuild
+    跳过编译（仅同步 + 推 git）。
+
+.PARAMETER DryRun
+    只做编译 + 同步，不改 license 不 push（本地验证用）。
+
+.EXAMPLE
+    powershell -File publish-halou-suite.ps1 -Version 2.0.1 -Message "修复 ZK MText 段长 bug"
+#>
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$Version,
+    [string]$Message = "",
+    [string]$ReleaseRepo = "C:\Users\Administrator\Desktop\halou-release",
+    [switch]$SkipBuild,
+    [switch]$DryRun
+)
+
+$ErrorActionPreference = 'Stop'
+$here = $PSScriptRoot
+$repoRoot = Split-Path -Parent $here  # W\
+$suiteRoot = Join-Path $repoRoot 'HalouSuite'
+$payloadEntryFile = Join-Path $suiteRoot 'Payload\PayloadEntry.cs'
+$buildAll = Join-Path $suiteRoot 'build-all.ps1'
+
+$srcLicense = Join-Path $here 'license.json'
+$srcManifest = Join-Path $here 'release\halou-plugin-manifest.json'
+
+function Write-Step($s) { Write-Host "`n==> $s" -ForegroundColor Cyan }
+
+# ---- 0. 校验 ----
+if ($Version -notmatch '^\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$') {
+    throw "版本号格式不合法：$Version （应为 X.Y.Z 或 X.Y.Z-tag）"
+}
+if (-not (Test-Path $payloadEntryFile)) { throw "找不到：$payloadEntryFile" }
+if (-not (Test-Path $buildAll)) { throw "找不到：$buildAll" }
+if (-not (Test-Path $srcLicense)) { throw "找不到：$srcLicense" }
+
+# ---- 1. 改写 Payload 版本号常量 ----
+Write-Step "改写 PayloadEntry.cs 的 PayloadVersion = `"$Version`""
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+$entryText = [System.IO.File]::ReadAllText($payloadEntryFile, [System.Text.Encoding]::UTF8)
+$rxVer = 'public const string PayloadVersion = "[^"]*"'
+if ($entryText -notmatch $rxVer) { throw "PayloadEntry.cs 里没找到 PayloadVersion 常量" }
+$origEntryText = $entryText
+$newEntryText = [regex]::Replace($entryText, $rxVer, "public const string PayloadVersion = `"$Version`"")
+[System.IO.File]::WriteAllText($payloadEntryFile, $newEntryText, $utf8)
+
+# ---- 2. 编译 ----
+if (-not $SkipBuild) {
+    Write-Step "编译三件套 (Contract / Host / Payload v$Version)"
+    & $buildAll -PayloadVersion $Version
+    if ($LASTEXITCODE -ne 0) { throw "构建失败，已退出" }
+} else {
+    Write-Host "跳过编译（-SkipBuild）" -ForegroundColor Yellow
+}
+
+$contractDll = Join-Path $suiteRoot 'Contract\dist\HalouContract.dll'
+$hostDll     = Join-Path $suiteRoot 'Host\dist\HalouHost.dll'
+$payloadDll  = Join-Path $suiteRoot ("Payload\dist\HalouPayload." + $Version + ".dll")
+foreach ($p in @($contractDll, $hostDll, $payloadDll)) {
+    if (-not (Test-Path $p)) { throw "构建产物缺失：$p" }
+}
+
+# ---- 3. 检查发布仓库 ----
+Write-Step "检查发布仓库 $ReleaseRepo"
+if (-not (Test-Path $ReleaseRepo))           { throw "未找到 halou-release 克隆：$ReleaseRepo" }
+if (-not (Test-Path (Join-Path $ReleaseRepo '.git'))) { throw "$ReleaseRepo 不是 git 仓库" }
+$dstRelease = Join-Path $ReleaseRepo 'release'
+New-Item -ItemType Directory -Path $dstRelease -Force | Out-Null
+
+# ---- 4. 更新 license.json（先在本地源 license 改，再复制到 release 仓库）----
+if (-not $DryRun) {
+    Write-Step "更新 license.json (latest_version=$Version, download_url, release_notes)"
+    $licenseText = [System.IO.File]::ReadAllText($srcLicense, [System.Text.Encoding]::UTF8)
+
+    # latest_version
+    $licenseText = [regex]::Replace($licenseText,
+        '"latest_version"\s*:\s*"[^"]*"',
+        "`"latest_version`": `"$Version`"")
+
+    # download_url -> 指向新格式的 HalouPayload.<Ver>.dll
+    $newUrl = "https://raw.githubusercontent.com/714167887-svg/halou-release/main/release/HalouPayload.$Version.dll"
+    $licenseText = [regex]::Replace($licenseText,
+        '"download_url"\s*:\s*"[^"]*"',
+        "`"download_url`": `"$newUrl`"")
+
+    # release_notes
+    if (-not [string]::IsNullOrWhiteSpace($Message)) {
+        $safe = $Message -replace '\\','\\\\' -replace '"','\"' -replace "`r?`n",'\n'
+        $licenseText = [regex]::Replace($licenseText,
+            '"release_notes"\s*:\s*"[^"]*"',
+            "`"release_notes`": `"$safe`"")
+    }
+
+    [System.IO.File]::WriteAllText($srcLicense, $licenseText, $utf8)
+} else {
+    Write-Host "DryRun：跳过 license.json 更新" -ForegroundColor Yellow
+}
+
+# ---- 5. 同步文件到发布仓库 ----
+Write-Step "同步文件到发布仓库 $dstRelease"
+Copy-Item $payloadDll  (Join-Path $dstRelease ("HalouPayload." + $Version + ".dll")) -Force
+Copy-Item $hostDll     (Join-Path $dstRelease 'HalouHost.dll')                      -Force
+Copy-Item $contractDll (Join-Path $dstRelease 'HalouContract.dll')                   -Force
+if (Test-Path $srcManifest) {
+    Copy-Item $srcManifest (Join-Path $dstRelease 'halou-plugin-manifest.json') -Force
+}
+Copy-Item $srcLicense (Join-Path $ReleaseRepo 'license.json') -Force
+
+# 顺手清理 release 仓库里旧版本的 HalouPayload.*.dll（保留最近 3 个）
+Get-ChildItem $dstRelease -Filter 'HalouPayload.*.dll' |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -Skip 3 |
+    ForEach-Object { Write-Host "  清理旧版本：$($_.Name)" -ForegroundColor DarkGray; Remove-Item $_.FullName -Force }
+
+# ---- 6. Git ----
+if ($DryRun) {
+    Write-Host "`nDryRun：不执行 git push。" -ForegroundColor Yellow
+    Write-Host "产物已在 $dstRelease，可手动检查"
+    # DryRun 模式下还原 PayloadEntry.cs 的版本号常量，避免污染本地开发状态
+    [System.IO.File]::WriteAllText($payloadEntryFile, $origEntryText, $utf8)
+    Write-Host "DryRun：已还原 PayloadEntry.cs 的 PayloadVersion 常量" -ForegroundColor DarkGray
+    return
+}
+
+Write-Step "git commit & push"
+Push-Location $ReleaseRepo
+try {
+    # git 把 warning（如 LF/CRLF）写到 stderr，与 $ErrorActionPreference=Stop 冲突。
+    # 改成 cmd.exe 调用，stderr 不抛 NativeCommandError。
+    $oldEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        cmd /c 'git add -A 2>&1' | Out-Null
+        $status = cmd /c 'git status --porcelain'
+        if (-not $status) {
+            Write-Host "没有变更，跳过提交" -ForegroundColor Yellow
+        } else {
+            $commitMsg = if ([string]::IsNullOrWhiteSpace($Message)) {
+                "release v$Version on $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+            } else { "release v$Version`: $Message" }
+            cmd /c "git -c user.email=`"release@halou.local`" -c user.name=`"halou-release-bot`" commit -m `"$commitMsg`" 2>&1" | ForEach-Object { Write-Host $_ }
+            cmd /c "git push 2>&1" | ForEach-Object { Write-Host $_ }
+            Write-Host "`n=== 发布完成 v$Version ===" -ForegroundColor Green
+            Write-Host "  Payload : $(Split-Path -Leaf $payloadDll)"
+            Write-Host "  URL     : $newUrl"
+            Write-Host "  买家下次点「下载新版本」即可在线热重载，无需关 CAD。"
+        }
+    } finally {
+        $ErrorActionPreference = $oldEAP
+    }
+} finally {
+    Pop-Location
+}

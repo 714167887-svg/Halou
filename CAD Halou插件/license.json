@@ -1,0 +1,27 @@
+{
+  "_comment": "修改此文件并 push 即可远程控制所有客户端。客户端每次启动/点击刷新时会拉取。",
+  "_features_help": "accounts[*].features 为功能白名单：不写/含 '*' = 全部功能；写具体 Id（如 'zk'、'kb'、'ole'）= 只允许这些功能，面板上未授权功能会隐藏。",
+  "latest_version": "1.1.3",
+  "download_url": "https://raw.githubusercontent.com/714167887-svg/halou-release/main/release/JsqClipboardCadPlugin.dll",
+  "release_notes": "v1.1.3: 点下载更新无需关闭 AutoCAD，后台守护进程自动在 CAD 正常退出时完成替换，下次启动即为新版；LSP 文件名英文化修复买家端乱码；仅保留 ZKK 展开入口。",
+  "default_allowed": false,
+  "kill_switch": false,
+  "kill_reason": "",
+  "accounts": {
+    "714167887": {
+      "allowed": true,
+      "features": ["*"],
+      "note": "演示账号（全功能）"
+    },
+    "example-customer": {
+      "allowed": false,
+      "reason": "授权已到期，请联系作者续费"
+    },
+    "Demo": {
+      "allowed": true,
+      "features": ["ole"],
+      "note": "Demo 账号：仅 OLE 批量导入图片"
+    }
+  }
+}
+

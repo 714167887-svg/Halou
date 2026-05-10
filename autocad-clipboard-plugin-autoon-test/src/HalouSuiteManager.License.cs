@@ -1,0 +1,146 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace JsqClipboardCadPlugin
+{
+    // 授权检查 / 账号白名单 / 功能权限。
+    // 字段：_licenseStatus / _licenseMessage / _allowedFeatures / _latestVersion / _latestDownloadUrl / _releaseNotes
+    // 见 HalouSuiteManager.cs（字段集中）。
+    internal sealed partial class HalouSuiteManager
+    {
+        public LicenseStatus LicenseStatus { get { return _licenseStatus; } }
+        public string LicenseMessage { get { return _licenseMessage; } }
+        public string LatestVersion { get { return _latestVersion; } }
+        public string LatestDownloadUrl { get { return _latestDownloadUrl; } }
+
+        public bool IsFeatureAllowed(string featureId)
+        {
+            // 未检查 / 离线 / 默认许可 等未设置 _allowedFeatures 的场景，一律放行
+            if (_allowedFeatures == null || _allowedFeatures.Count == 0) return true;
+            if (string.IsNullOrWhiteSpace(featureId)) return true;
+            if (_allowedFeatures.Contains("*")) return true;
+            return _allowedFeatures.Contains(featureId.Trim());
+        }
+
+        public void TryCheckLicense(bool silent)
+        {
+            string endpoint = _configuration != null ? _configuration.LicenseEndpoint : null;
+            if (string.IsNullOrWhiteSpace(endpoint))
+            {
+                _licenseStatus = LicenseStatus.NotConfigured;
+                _licenseMessage = "未配置授权端点";
+                return;
+            }
+
+            string accountName = _configuration != null ? _configuration.AccountName : null;
+            try
+            {
+                Dictionary<string, string> headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                // 注意：不发 Authorization 头 —— raw.githubusercontent.com 会把带
+                // Authorization:Bearer 的请求当 API 调用，非法 token 返回 404。
+                // token 改用自定义头 X-Halou-Token。
+                if (!string.IsNullOrWhiteSpace(_configuration.AccountToken))
+                {
+                    headers["X-Halou-Token"] = _configuration.AccountToken.Trim();
+                }
+                if (!string.IsNullOrWhiteSpace(accountName))
+                {
+                    headers["X-Halou-Account"] = accountName.Trim();
+                }
+                headers["X-Halou-Client"] = "HalouSuite/" + CurrentVersion;
+
+                // 加时间戳防 CDN 缓存
+                string url = endpoint + (endpoint.Contains("?") ? "&" : "?") + "_t=" + DateTime.UtcNow.Ticks;
+                // 内容必须以 '{' 起手，否则就是被中间链路劫持成 HTML 错误页 → 自动换镜像/通道
+                string json = RobustHttp.DownloadString(url, headers, s =>
+                {
+                    string t = s == null ? "" : s.TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+                    return t.Length > 0 && t[0] == '{';
+                });
+                LicenseInfo info = LicenseInfo.Parse(json);
+                ApplyLicense(info, accountName);
+            }
+            catch (System.Exception ex)
+            {
+                _licenseStatus = LicenseStatus.Unknown;
+                _licenseMessage = "无法联网校验：" + ex.Message;
+                if (!silent)
+                {
+                    WriteMessage(string.Format("{0} 授权校验失败：{1}", StatusPrefix, ex.Message));
+                }
+            }
+        }
+
+        private void ApplyLicense(LicenseInfo info, string accountName)
+        {
+            // 默认不限制功能；若命中某个有功能白名单的账号再覆盖
+            _allowedFeatures = null;
+
+            if (info == null)
+            {
+                _licenseStatus = LicenseStatus.Unknown;
+                _licenseMessage = "授权信息解析失败";
+                return;
+            }
+
+            _latestVersion = !string.IsNullOrWhiteSpace(info.LatestVersion) ? info.LatestVersion.Trim() : CurrentVersion;
+            _latestDownloadUrl = info.DownloadUrl;
+            _releaseNotes = info.ReleaseNotes;
+
+            // 全局封杀：kill_switch = true 时无视账号直接禁用
+            if (info.KillSwitch)
+            {
+                _licenseStatus = LicenseStatus.Denied;
+                _licenseMessage = !string.IsNullOrWhiteSpace(info.KillReason) ? info.KillReason : "授权方已全局停用。";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(accountName))
+            {
+                _licenseStatus = LicenseStatus.NotConfigured;
+                _licenseMessage = "请到「账号」页填写账号名后重新检查。";
+                return;
+            }
+
+            LicenseAccountInfo acct;
+            if (info.Accounts != null && info.Accounts.TryGetValue(accountName.Trim(), out acct) && acct != null)
+            {
+                if (acct.Allowed)
+                {
+                    _licenseStatus = LicenseStatus.Allowed;
+                    _licenseMessage = !string.IsNullOrWhiteSpace(acct.Note)
+                        ? string.Format("✔ 账号「{0}」已授权（{1}）", accountName, acct.Note)
+                        : string.Format("✔ 账号「{0}」已授权", accountName);
+
+                    // 功能白名单：null / 空 / 含 "*" 视为全开；否则只允许列出的功能 Id
+                    if (acct.Features != null && acct.Features.Count > 0
+                        && !acct.Features.Any(f => f == "*"))
+                    {
+                        _allowedFeatures = new HashSet<string>(acct.Features, StringComparer.OrdinalIgnoreCase);
+                        _licenseMessage += string.Format("，限定功能：{0}", string.Join("、", acct.Features.ToArray()));
+                    }
+                }
+                else
+                {
+                    _licenseStatus = LicenseStatus.Denied;
+                    _licenseMessage = !string.IsNullOrWhiteSpace(acct.Reason)
+                        ? string.Format("✖ 账号「{0}」已被停用：{1}", accountName, acct.Reason)
+                        : string.Format("✖ 账号「{0}」已被停用", accountName);
+                }
+                return;
+            }
+
+            if (info.DefaultAllowed)
+            {
+                _licenseStatus = LicenseStatus.Allowed;
+                _licenseMessage = string.Format("✔ 账号「{0}」未在清单，按默认许可放行", accountName);
+            }
+            else
+            {
+                _licenseStatus = LicenseStatus.Denied;
+                _licenseMessage = string.Format("✖ 账号「{0}」不在授权清单", accountName);
+            }
+        }
+    }
+}

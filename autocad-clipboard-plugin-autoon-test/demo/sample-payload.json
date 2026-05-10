@@ -1,0 +1,50 @@
+{
+  "format": "JSQCAD/1.0",
+  "units": "mm",
+  "basePoint": [0, 0],
+  "layers": [
+    { "name": "JSQ-OUTLINE", "colorIndex": 1 },
+    { "name": "JSQ-HOLES", "colorIndex": 4 },
+    { "name": "JSQ-FOLD", "colorIndex": 2 },
+    { "name": "JSQ-NOTES", "colorIndex": 7 }
+  ],
+  "entities": [
+    {
+      "type": "polyline",
+      "layer": "JSQ-OUTLINE",
+      "closed": true,
+      "vertices": [
+        [0, 0],
+        [850, 0],
+        [850, 1200],
+        [0, 1200]
+      ]
+    },
+    {
+      "type": "circle",
+      "layer": "JSQ-HOLES",
+      "center": [85, 110],
+      "radius": 8
+    },
+    {
+      "type": "circle",
+      "layer": "JSQ-HOLES",
+      "center": [765, 110],
+      "radius": 8
+    },
+    {
+      "type": "line",
+      "layer": "JSQ-FOLD",
+      "start": [425, 0],
+      "end": [425, 1200]
+    },
+    {
+      "type": "text",
+      "layer": "JSQ-NOTES",
+      "position": [0, -60],
+      "height": 28,
+      "value": "Demo Panel 850x1200"
+    }
+  ]
+}
+

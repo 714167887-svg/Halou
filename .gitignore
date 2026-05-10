@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Build / release outputs
+**/bin/
+**/obj/
+**/dist/
+**/release/
+HalouSuite/**/bin/
+HalouSuite/**/obj/
+HalouSuiteUpdater/**/bin/
+HalouSuiteUpdater/**/obj/
+autocad-clipboard-plugin-autoon-test/dist/
+CAD Halou插件/release/
+
+# CAD / Office 临时
+*.dwl
+*.dwl2
+*.bak
+*.~$*
+~$*
+
+# 中间产物
+ZK/_frames/
+ZK/*.mp4
+ZK/_temp*/
+JT/*.png
+JT/*_out/
+PB/_tmp/
+PB/11/
+PB/output/
+OLE/_tmp/
+KB/_tmp/
+
+# IDE
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+
+# 日志
+*.log
+logs/

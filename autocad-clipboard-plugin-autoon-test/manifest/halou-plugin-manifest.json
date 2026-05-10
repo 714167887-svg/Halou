@@ -1,0 +1,42 @@
+{
+  "Version": "2026-04-27",
+  "UpdatedAt": "2026-04-27T12:00:00",
+  "Features": [
+    {
+      "Id": "zk",
+      "Title": "展开功能",
+      "Description": "加载并执行 ZKK AutoLISP 主入口。",
+      "Kind": "lisp",
+      "LoadPath": "ZK/ZKK_Unfold_V13.lsp",
+      "Command": "ZKK",
+      "Enabled": true
+    },
+    {
+      "Id": "kb",
+      "Title": "开板耗材计算",
+      "Description": "选闭合钣金截面多段线，按 ZKK 算法展开并计算可开支数（默认 1210mm），在截面下方红色标注。",
+      "Kind": "lisp",
+      "LoadPath": "KB/KB_Yield.lsp",
+      "Command": "KB",
+      "Enabled": true
+    },
+    {
+      "Id": "jt",
+      "Title": "方框截图",
+      "Description": "选一个方框，自动拷到剪贴板（同时包含图片+CAD实体）并导出 PNG 到 E:/halou wode/W/JT 目录。",
+      "Kind": "lisp",
+      "LoadPath": "JT/JT_Snapshot.lsp",
+      "Command": "JT",
+      "Enabled": true
+    },
+    {
+      "Id": "ole",
+      "Title": "OLE 批量导入图片",
+      "Description": "扫描当前图纸目录的图片文件，逐张以 OLE 方式插入当前 CAD 图纸；单张最大 2500×2500mm，横向间距 150mm。",
+      "Kind": "lisp",
+      "LoadPath": "OLE/oleimgdir.lsp",
+      "Command": "OLE",
+      "Enabled": true
+    }
+  ]
+}

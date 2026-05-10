@@ -1,0 +1,13 @@
+; AutoCAD SCR 烟测脚本（acad.exe /b 模式执行）
+; 各命令之间用空行表示回车
+; 注意：HALOURELOAD 内部用 Application.Idle 切换，需要让 acad 跑一会儿才会触发，
+;       因此中间穿插一个 DELAY 让 idle 事件有机会被触发
+HALOU
+
+HALOURELOAD
+
+DELAY 2000
+HALOU
+
+QUIT
+Y
