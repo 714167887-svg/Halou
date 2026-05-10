@@ -26,8 +26,12 @@ namespace HalouSuite.Payload
 {
     internal sealed class LicenseInfo
     {
+        // 老字段：服务于 1.x 宿主 JsqClipboardCadPlugin.dll 自更新
         public string LatestVersion { get; set; }
         public string DownloadUrl { get; set; }
+        // 新字段：Phase 2 Payload 热更新
+        public string LatestPayloadVersion { get; set; }
+        public string PayloadDownloadUrl { get; set; }
         public string ReleaseNotes { get; set; }
         public bool DefaultAllowed { get; set; }
         public bool KillSwitch { get; set; }
@@ -56,6 +60,8 @@ namespace HalouSuite.Payload
             {
                 LatestVersion = GetString(raw, "latest_version"),
                 DownloadUrl = GetString(raw, "download_url"),
+                LatestPayloadVersion = GetString(raw, "latest_payload_version"),
+                PayloadDownloadUrl = GetString(raw, "payload_download_url"),
                 ReleaseNotes = GetString(raw, "release_notes"),
                 DefaultAllowed = GetBool(raw, "default_allowed", false),
                 KillSwitch = GetBool(raw, "kill_switch", false),

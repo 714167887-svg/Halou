@@ -38,7 +38,9 @@ namespace HalouSuite.Payload
         private const string PaletteTitle = "Halou 插件集合";
         private const string StatusPrefix = "Halou Suite";
         private const int MinimumRefreshSeconds = 60;
-        public const string CurrentVersion = "1.1.68";
+        // Phase 2 起，CurrentVersion 与 PayloadEntry.PayloadVersion 同步
+        // （1.1.68 是 Phase 2 拆分前 OLD host 末版本号，保留为历史参考）
+        public const string CurrentVersion = PayloadEntry.PayloadVersion;
         public const string DefaultLicenseEndpoint =
             "https://raw.githubusercontent.com/714167887-svg/halou-release/main/license.json";
 

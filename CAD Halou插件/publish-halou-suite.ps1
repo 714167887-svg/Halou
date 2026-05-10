@@ -94,21 +94,42 @@ New-Item -ItemType Directory -Path $dstRelease -Force | Out-Null
 
 # ---- 4. 更新 license.json（先在本地源 license 改，再复制到 release 仓库）----
 if (-not $DryRun) {
-    Write-Step "更新 license.json (latest_version=$Version, download_url, release_notes)"
+    Write-Step "更新 license.json (release_notes + latest_payload_version)"
     $licenseText = [System.IO.File]::ReadAllText($srcLicense, [System.Text.Encoding]::UTF8)
 
-    # latest_version
-    $licenseText = [regex]::Replace($licenseText,
-        '"latest_version"\s*:\s*"[^"]*"',
-        "`"latest_version`": `"$Version`"")
+    # ⚠️ 重要：不要写 latest_version / download_url —— 这两个字段是【宿主自更新】用的
+    # （host.IsUpdateAvailable() 会比较 host CurrentVersion < latest_version，
+    #  点"下载新版本"会下 download_url 当 host DLL 装到 bin\）。
+    # 如果在这里写 Payload 版本，客户端会把 Payload DLL 当 host 装，acad 启动直接挂。
+    # 2026-05 真实事故：v2.0.1/v2.0.2 发布把 host 字段污染，导致一批客户端 bin 被覆盖。
+    # —— 详见 memory/repo/halou-license-json-fields-2026-05.md。
+    # Payload 版本走自己的字段，等 Phase 2 host 上线后再切换语义。
 
-    # download_url -> 指向新格式的 HalouPayload.<Ver>.dll
-    $newUrl = "https://raw.githubusercontent.com/714167887-svg/halou-release/main/release/HalouPayload.$Version.dll"
-    $licenseText = [regex]::Replace($licenseText,
-        '"download_url"\s*:\s*"[^"]*"',
-        "`"download_url`": `"$newUrl`"")
+    # latest_payload_version（独立于 host 字段）
+    if ($licenseText -match '"latest_payload_version"\s*:') {
+        $licenseText = [regex]::Replace($licenseText,
+            '"latest_payload_version"\s*:\s*"[^"]*"',
+            "`"latest_payload_version`": `"$Version`"")
+    } else {
+        # 首次发布：在 release_notes 前面插一行
+        $licenseText = [regex]::Replace($licenseText,
+            '("release_notes"\s*:)',
+            "`"latest_payload_version`": `"$Version`",`r`n  `$1")
+    }
 
-    # release_notes
+    # payload_download_url（独立于 host 字段）
+    $newUrl = "https://cdn.jsdelivr.net/gh/714167887-svg/halou-release@main/release/HalouPayload.$Version.dll"
+    if ($licenseText -match '"payload_download_url"\s*:') {
+        $licenseText = [regex]::Replace($licenseText,
+            '"payload_download_url"\s*:\s*"[^"]*"',
+            "`"payload_download_url`": `"$newUrl`"")
+    } else {
+        $licenseText = [regex]::Replace($licenseText,
+            '("release_notes"\s*:)',
+            "`"payload_download_url`": `"$newUrl`",`r`n  `$1")
+    }
+
+    # release_notes（这个改无害，host UI 也会读）
     if (-not [string]::IsNullOrWhiteSpace($Message)) {
         $safe = $Message -replace '\\','\\\\' -replace '"','\"' -replace "`r?`n",'\n'
         $licenseText = [regex]::Replace($licenseText,

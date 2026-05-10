@@ -84,8 +84,17 @@ namespace HalouSuite.Payload
                 return;
             }
 
-            _latestVersion = !string.IsNullOrWhiteSpace(info.LatestVersion) ? info.LatestVersion.Trim() : CurrentVersion;
-            _latestDownloadUrl = info.DownloadUrl;
+            // Phase 2：优先使用 Payload 字段（latest_payload_version / payload_download_url）；
+            // 没填则回退到 host 字段（latest_version / download_url）—— 这条 fallback 仅为 1.x 旧客户端保留，
+            // 在 Phase 2 host 下点"下载新版本"，IsHalouPayloadDll 会拒绝 host DLL 并给出明确提示。
+            string lv = !string.IsNullOrWhiteSpace(info.LatestPayloadVersion)
+                ? info.LatestPayloadVersion.Trim()
+                : (!string.IsNullOrWhiteSpace(info.LatestVersion) ? info.LatestVersion.Trim() : CurrentVersion);
+            string ldu = !string.IsNullOrWhiteSpace(info.PayloadDownloadUrl)
+                ? info.PayloadDownloadUrl.Trim()
+                : info.DownloadUrl;
+            _latestVersion = lv;
+            _latestDownloadUrl = ldu;
             _releaseNotes = info.ReleaseNotes;
 
             // 全局封杀：kill_switch = true 时无视账号直接禁用
