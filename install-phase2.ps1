@@ -121,16 +121,32 @@ New-Item $payloads -ItemType Directory -Force | Out-Null
 New-Item "$env:LOCALAPPDATA\HalouSuite\state" -ItemType Directory -Force | Out-Null
 Write-Host "   ✓ 目录就绪" -ForegroundColor Green
 
-# ---- 3. 备份现有 OLD host（如果存在）----
+# ---- 3. 备份并删除现有 OLD host（防止混合加载）----
 $oldHost = Join-Path $bin "JsqClipboardCadPlugin.dll"
 if (Test-Path $oldHost) {
     Write-Host ""
-    Write-Host "==> 3. 备份现有 OLD host" -ForegroundColor Cyan
+    Write-Host "==> 3. 备份并删除现有 OLD host" -ForegroundColor Cyan
     $backupDir = Join-Path $bin "backup-old-host"
     New-Item $backupDir -ItemType Directory -Force | Out-Null
     $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
     Copy-Item $oldHost (Join-Path $backupDir "JsqClipboardCadPlugin.$stamp.dll") -Force
-    Write-Host "   ✓ 备份到 $backupDir\JsqClipboardCadPlugin.$stamp.dll" -ForegroundColor Green
+    Remove-Item $oldHost -Force
+    Write-Host "   ✓ 已备份并删除：$oldHost" -ForegroundColor Green
+    Write-Host "     （留 OLD DLL 在 bin 会导致 acad 同时加载 OLD+NEW，热更新触发 FileLoadException）" -ForegroundColor DarkYellow
+}
+
+# ---- 3b. 清理 payloads 目录下旧 HalouPayload.*.dll（避免 NEW host 误加载旧 Payload）----
+$stalePayloads = Get-ChildItem $payloads -Filter "HalouPayload.*.dll" -ErrorAction SilentlyContinue
+if ($stalePayloads.Count -gt 0) {
+    Write-Host ""
+    Write-Host "==> 3b. 清理 payloads 目录下旧 HalouPayload.*.dll" -ForegroundColor Cyan
+    $payloadBackup = Join-Path $payloads "backup-stale"
+    New-Item $payloadBackup -ItemType Directory -Force | Out-Null
+    foreach ($p in $stalePayloads) {
+        Move-Item $p.FullName (Join-Path $payloadBackup $p.Name) -Force
+        Write-Host "   移出：$($p.Name)" -ForegroundColor Yellow
+    }
+    Write-Host "   ✓ 已备份到 $payloadBackup" -ForegroundColor Green
 }
 
 # ---- 4. 部署 NEW host ----
