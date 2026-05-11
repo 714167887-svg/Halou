@@ -253,17 +253,47 @@ function Set-ClipboardImage([string]$path) {
         throw "未找到图片文件: $path"
     }
 
+    # v1.1.75: 把图统一归一化为 96 DPI 临时文件，避免源图 DPI 不同（如扫描件 300/600 DPI）
+    # 导致 mspaint/Bitmap 把高 DPI 元数据带进剪贴板后，AutoCAD 把图按物理尺寸解释成 3~6 倍大。
+    # 像素数完全保留，只重置 DPI 元数据。
+    $normalizedPath = $path
+    try {
+        $srcImg = [System.Drawing.Image]::FromFile($path)
+        try {
+            $hRes = $srcImg.HorizontalResolution
+            $vRes = $srcImg.VerticalResolution
+            if ([Math]::Abs($hRes - 96.0) -gt 0.5 -or [Math]::Abs($vRes - 96.0) -gt 0.5) {
+                $normBmp = New-Object System.Drawing.Bitmap $srcImg.Width, $srcImg.Height, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+                $normBmp.SetResolution(96.0, 96.0)
+                $gNorm = [System.Drawing.Graphics]::FromImage($normBmp)
+                try {
+                    $gNorm.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+                    $gNorm.DrawImageUnscaled($srcImg, 0, 0)
+                } finally { $gNorm.Dispose() }
+                $normalizedPath = Join-Path $env:TEMP ("oleimgdir-norm96-" + [System.Guid]::NewGuid().ToString() + ".png")
+                $normBmp.Save($normalizedPath, [System.Drawing.Imaging.ImageFormat]::Png)
+                $normBmp.Dispose()
+            }
+        } finally { $srcImg.Dispose() }
+    } catch {
+        # 归一化失败就用原文件，至少不阻断主流程
+        $normalizedPath = $path
+    }
+
     # v1.1.65: 优先走 mspaint 路线（与 AutoCAD 自带「画笔图片」一致 → 放大顺滑）；
     #         失败时回退到旧的位图+EMF 路线。
     try {
-        Set-ClipboardImage_PaintEmbed $path
+        Set-ClipboardImage_PaintEmbed $normalizedPath
+        if ($normalizedPath -ne $path) {
+            Remove-Item -LiteralPath $normalizedPath -Force -ErrorAction SilentlyContinue
+        }
         return
     } catch {
         # 静默回退
     }
 
-    $tmp = Join-Path $env:TEMP ([System.Guid]::NewGuid().ToString() + [System.IO.Path]::GetExtension($path))
-    Copy-Item -LiteralPath $path -Destination $tmp -Force
+    $tmp = Join-Path $env:TEMP ([System.Guid]::NewGuid().ToString() + [System.IO.Path]::GetExtension($normalizedPath))
+    Copy-Item -LiteralPath $normalizedPath -Destination $tmp -Force
     try {
         $bytes = [System.IO.File]::ReadAllBytes($tmp)
         $ms = New-Object System.IO.MemoryStream(,$bytes)
@@ -275,11 +305,14 @@ function Set-ClipboardImage([string]$path) {
         $needResize = ($targetWidth -ne $img.Width) -or ($targetHeight -ne $img.Height)
 
         # v1.1.64: 不超过上限时直接用原图位图，避免无意义重绘损失精度
+        # v1.1.75: 即使不需要缩放，也强制把位图 DPI 重设为 96，避免源图 DPI 元数据影响 CAD 解释
         if (-not $needResize) {
             $bmp = New-Object System.Drawing.Bitmap $img
+            try { $bmp.SetResolution(96.0, 96.0) } catch {}
         } else {
             # 超过上限才缩放：白底 24bpp 位图（AutoCAD 重开 dwg 时减少 OLE 持久化问题）
             $bmp = New-Object System.Drawing.Bitmap $targetWidth, $targetHeight, ([System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+            try { $bmp.SetResolution(96.0, 96.0) } catch {}
             $graphics = [System.Drawing.Graphics]::FromImage($bmp)
             $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
             $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
@@ -309,6 +342,10 @@ function Set-ClipboardImage([string]$path) {
     finally {
         if (Test-Path -LiteralPath $tmp) {
             Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        }
+        # 清理 v1.1.75 归一化的临时文件
+        if ($normalizedPath -ne $path -and (Test-Path -LiteralPath $normalizedPath)) {
+            Remove-Item -LiteralPath $normalizedPath -Force -ErrorAction SilentlyContinue
         }
     }
 }

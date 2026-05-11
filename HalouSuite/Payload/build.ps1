@@ -38,6 +38,22 @@ if (Test-Path (Join-Path $autocadDir 'acmgd.dll')) {
     )
 }
 
+# v1.1.75: 嵌入 OLE 辅助脚本（ps1/lsp），与 OLD host 一致；
+# 运行时 ExtractEmbeddedPayloads() 会按 "Payload.<subdir>.<filename>" 资源命名解压到 DLL 旁 OLE\
+$payloadArgs = @()
+$oleDir = Join-Path (Split-Path -Parent (Split-Path -Parent $projectRoot)) 'OLE'
+if (Test-Path $oleDir) {
+    Get-ChildItem -Path $oleDir -File -Recurse:$false |
+        Where-Object { $_.Extension -in '.lsp', '.ps1' } |
+        ForEach-Object {
+            $resName = "Payload.OLE.$($_.Name)"
+            $payloadArgs += "/resource:$($_.FullName),$resName"
+            Write-Host "  embed: OLE/$($_.Name) -> $resName"
+        }
+} else {
+    Write-Host "  [warn] OLE dir not found: $oleDir" -ForegroundColor Yellow
+}
+
 & $csc /nologo /target:library /platform:x64 /optimize+ /out:$out `
     /r:"$contractDll" `
     @autocadRefs `
@@ -49,6 +65,7 @@ if (Test-Path (Join-Path $autocadDir 'acmgd.dll')) {
     /r:System.Runtime.Serialization.dll `
     /r:"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\WPF\PresentationCore.dll" `
     /r:"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\WPF\WindowsBase.dll" `
+    @payloadArgs `
     @srcFiles
 
 if ($LASTEXITCODE -ne 0) { throw "Payload 构建失败 ($LASTEXITCODE)" }
