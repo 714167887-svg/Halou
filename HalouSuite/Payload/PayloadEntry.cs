@@ -17,8 +17,12 @@ namespace HalouSuite.Payload
     /// </summary>
     public sealed class PayloadEntry : IPayload
     {
-        public const string PayloadVersion = "2.0.9";
+        public const string PayloadVersion = "2.0.16";
         private IHostServices _host;
+        // 让 HalouSuiteManager 能在构造期间拿到 host（用于定位资源目录 PayloadDirectory），
+        // 因为 host 通过 Assembly.Load(byte[]) 加载本 dll，导致 Assembly.Location 为空，
+        // 不能再依赖 GetExecutingAssembly().Location 推断资源解压位置。
+        internal static IHostServices CurrentHost { get; private set; }
         private HalouSuiteManager _suite;
         private static readonly string LogPath =
             Path.Combine(Path.GetTempPath(), "HalouPayload.log");
@@ -39,6 +43,7 @@ namespace HalouSuite.Payload
         public void Activate(IHostServices host)
         {
             _host = host;
+            CurrentHost = host;
             DiagWrite("Activate called. host=" + (host == null ? "(null)" : ("v" + host.HostVersion)));
             try
             {
@@ -64,6 +69,7 @@ namespace HalouSuite.Payload
             try { if (_suite != null) { _suite.Dispose(); _suite = null; } } catch { }
             try { if (_host != null) _host.WriteLine("\n[HalouPayload " + PayloadVersion + "] Disposed."); } catch { }
             _host = null;
+            CurrentHost = null;
         }
 
         public void ShowPalette() { if (_suite != null) _suite.ShowPalette(); else Stub("HALOU"); }

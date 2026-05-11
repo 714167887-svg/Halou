@@ -32,6 +32,9 @@ namespace HalouSuite.Payload
         // 新字段：Phase 2 Payload 热更新
         public string LatestPayloadVersion { get; set; }
         public string PayloadDownloadUrl { get; set; }
+        // 多 ARX SDK 分发（如 payload_download_url_arx25）：tag → url
+        // 客户端按本进程 acmgd 大版本（24=arx24/25=arx25）优先匹配，未命中回退到 PayloadDownloadUrl
+        public Dictionary<string, string> PayloadDownloadUrls { get; set; }
         public string ReleaseNotes { get; set; }
         public bool DefaultAllowed { get; set; }
         public bool KillSwitch { get; set; }
@@ -62,12 +65,29 @@ namespace HalouSuite.Payload
                 DownloadUrl = GetString(raw, "download_url"),
                 LatestPayloadVersion = GetString(raw, "latest_payload_version"),
                 PayloadDownloadUrl = GetString(raw, "payload_download_url"),
+                PayloadDownloadUrls = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
                 ReleaseNotes = GetString(raw, "release_notes"),
                 DefaultAllowed = GetBool(raw, "default_allowed", false),
                 KillSwitch = GetBool(raw, "kill_switch", false),
                 KillReason = GetString(raw, "kill_reason"),
                 Accounts = new Dictionary<string, LicenseAccountInfo>(StringComparer.OrdinalIgnoreCase)
             };
+
+            // 扫描所有 payload_download_url_<tag> 字段
+            const string prefix = "payload_download_url_";
+            foreach (KeyValuePair<string, object> kv in raw)
+            {
+                if (kv.Key == null) continue;
+                if (kv.Key.Length <= prefix.Length) continue;
+                if (!kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                string tag = kv.Key.Substring(prefix.Length).Trim();
+                if (string.IsNullOrWhiteSpace(tag)) continue;
+                string url = kv.Value == null ? null : kv.Value.ToString();
+                if (!string.IsNullOrWhiteSpace(url))
+                {
+                    info.PayloadDownloadUrls[tag] = url.Trim();
+                }
+            }
 
             object accountsObj;
             if (raw.TryGetValue("accounts", out accountsObj) && accountsObj is Dictionary<string, object>)

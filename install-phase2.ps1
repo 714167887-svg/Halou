@@ -38,10 +38,27 @@
 param(
     [string]$ReleaseDir = "",
     [string]$AcadVersion = "R24.0",
+    # 多 ARX SDK 发布模式：指定部署哪个 tag。不传则根据 $AcadVersion 推断默认值。
+    # AutoCAD 2021/2022/2023 (R24.0/R24.1/R24.2) -> arx24
+    # AutoCAD 2024+      (R24.3/R25.x)         -> arx25
+    [string]$ArxTag = "",
     [switch]$Uninstall
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Resolve-ArxTag {
+    param([string]$acadVer)
+    if ([string]::IsNullOrWhiteSpace($acadVer)) { return $null }
+    if ($acadVer -match '^R(\d+)\.(\d+)$') {
+        $major = [int]$Matches[1]; $minor = [int]$Matches[2]
+        # R24.0 / R24.1 / R24.2 = acad 2021/2022/2023 -> ARX 24
+        if ($major -eq 24 -and $minor -le 2) { return 'arx24' }
+        # R24.3 = acad 2024 -> ARX 25；R25.* = acad 2025+ -> ARX 25
+        if (($major -eq 24 -and $minor -ge 3) -or $major -ge 25) { return 'arx25' }
+    }
+    return $null
+}
 
 $here = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($ReleaseDir)) {
@@ -152,12 +169,35 @@ if ($stalePayloads.Count -gt 0) {
 # ---- 4. 部署 NEW host ----
 Write-Host ""
 Write-Host "==> 4. 部署 NEW host (HalouHost + Contract)" -ForegroundColor Cyan
-$hostDll     = Join-Path $ReleaseDir "HalouHost.dll"
+
+# 推断 ArxTag：未显式指定则按 AcadVersion 自动推导
+if ([string]::IsNullOrWhiteSpace($ArxTag)) {
+    $ArxTag = Resolve-ArxTag $AcadVersion
+}
+
+# 选 host DLL：优先用 HalouHost.<tag>.dll（多 SDK release），回退到 HalouHost.dll（单 SDK release）
+$hostDll = $null
+if (-not [string]::IsNullOrWhiteSpace($ArxTag)) {
+    $tagged = Join-Path $ReleaseDir ("HalouHost." + $ArxTag + ".dll")
+    if (Test-Path $tagged) {
+        $hostDll = $tagged
+        Write-Host "   选择 host: HalouHost.$ArxTag.dll (按 $AcadVersion 推断)" -ForegroundColor Cyan
+    }
+}
+if (-not $hostDll) {
+    $legacy = Join-Path $ReleaseDir "HalouHost.dll"
+    if (Test-Path $legacy) {
+        $hostDll = $legacy
+        if (-not [string]::IsNullOrWhiteSpace($ArxTag)) {
+            Write-Host "   release 中无 HalouHost.$ArxTag.dll，回退到 HalouHost.dll" -ForegroundColor DarkYellow
+        }
+    }
+}
 $contractDll = Join-Path $ReleaseDir "HalouContract.dll"
 $manifest    = Join-Path $ReleaseDir "halou-plugin-manifest.json"
 
 foreach ($f in @($hostDll, $contractDll)) {
-    if (-not (Test-Path $f)) {
+    if (-not $f -or -not (Test-Path $f)) {
         Write-Host "❌ 缺少文件：$f" -ForegroundColor Red
         exit 1
     }
@@ -173,25 +213,48 @@ Write-Host "   ✓ HalouHost.dll + HalouContract.dll 已部署" -ForegroundColor
 # ---- 5. 部署最新 Payload ----
 Write-Host ""
 Write-Host "==> 5. 部署最新 Payload" -ForegroundColor Cyan
-$payloadFiles = Get-ChildItem $ReleaseDir -Filter "HalouPayload.*.dll" | Sort-Object Name
-if ($payloadFiles.Count -eq 0) {
-    Write-Host "❌ halou-release/release/ 下没有 HalouPayload.*.dll" -ForegroundColor Red
+
+# 优先找 HalouPayload.<ver>.<tag>.dll；回退到无 tag 后缀的 HalouPayload.<ver>.dll
+$candidates = @()
+if (-not [string]::IsNullOrWhiteSpace($ArxTag)) {
+    $candidates = Get-ChildItem $ReleaseDir -Filter ("HalouPayload.*." + $ArxTag + ".dll") -ErrorAction SilentlyContinue
+    if ($candidates.Count -gt 0) {
+        Write-Host "   选择 payload 调用 $ArxTag 版本" -ForegroundColor Cyan
+    }
+}
+if ($candidates.Count -eq 0) {
+    # 单 SDK release 或 release 里没有该 tag 的产物：退回无 tag 后缀的 payload
+    $candidates = Get-ChildItem $ReleaseDir -Filter "HalouPayload.*.dll" -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^HalouPayload\.[\d\.]+(?:-[A-Za-z0-9\.]+)?\.dll$' }
+    if (-not [string]::IsNullOrWhiteSpace($ArxTag) -and $candidates.Count -gt 0) {
+        Write-Host "   release 中无 .$ArxTag.dll 后缀产物，回退到无 tag 的 HalouPayload.<ver>.dll" -ForegroundColor DarkYellow
+    }
+}
+if ($candidates.Count -eq 0) {
+    Write-Host "❌ halou-release/release/ 下没有可用的 HalouPayload.*.dll" -ForegroundColor Red
     exit 1
 }
-# 按版本号排序取最新（简单字典序，对 X.Y.Z 三位数版本号够用）
-$latest = $payloadFiles | Sort-Object {
-    if ($_.Name -match 'HalouPayload\.(\d+)\.(\d+)\.(\d+)\.dll') {
+
+# 按版本号排序取最新（X.Y.Z 三位数字字典序够用）
+$latest = $candidates | Sort-Object {
+    if ($_.Name -match 'HalouPayload\.(\d+)\.(\d+)\.(\d+)') {
         [int]$matches[1]*1000000 + [int]$matches[2]*1000 + [int]$matches[3]
     } else { 0 }
 } | Select-Object -Last 1
 
-Copy-Item $latest.FullName (Join-Path $payloads $latest.Name) -Force
-Write-Host "   ✓ $($latest.Name) 已部署" -ForegroundColor Green
+# 部署名：HalouHost 加载时不认带 ArxTag 后缀的名字，需要重命名为 HalouPayload.<ver>.dll
+if ($latest.Name -match '^HalouPayload\.(\d+\.\d+\.\d+(?:-[A-Za-z0-9\.]+)?)\.[A-Za-z0-9]+\.dll$') {
+    $deployName = "HalouPayload.$($Matches[1]).dll"
+} else {
+    $deployName = $latest.Name
+}
+Copy-Item $latest.FullName (Join-Path $payloads $deployName) -Force
+Write-Host "   ✓ $($latest.Name) → $deployName 已部署" -ForegroundColor Green
 
 # 写 lkg
-$lkg = Join-Path $payloads $latest.Name
+$lkg = Join-Path $payloads $deployName
 Set-Content -Path "$env:LOCALAPPDATA\HalouSuite\state\lkg.txt" -Value $lkg -Encoding ASCII
-Write-Host "   ✓ lkg.txt -> $($latest.Name)" -ForegroundColor Green
+Write-Host "   ✓ lkg.txt -> $deployName" -ForegroundColor Green
 
 # ---- 6. 注册表 ----
 Write-Host ""

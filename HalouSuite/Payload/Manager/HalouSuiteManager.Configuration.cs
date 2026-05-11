@@ -12,6 +12,9 @@ namespace HalouSuite.Payload
         public void RefreshManifest(bool manual)
         {
             EnsureInitialized();
+            // 先尝试从 CDN 同步最新 manifest 到本地 bin/halou-plugin-manifest.json，
+            // 这样以后只 push manifest（不发新 Payload）也能让客户面板看到新功能名/描述。
+            TrySyncManifestFromCdn();
             _manifest = PluginManifest.Load(_configuration, _localManifestPath, _manifestCachePath, out _statusMessage);
             TryCheckLicense(silent: !manual);
             ApplyCommandAliases();
@@ -20,6 +23,42 @@ namespace HalouSuite.Payload
             if (manual)
             {
                 WriteMessage(string.Format("{0} 已刷新：{1}", StatusPrefix, _statusMessage));
+            }
+        }
+
+        // 根据 license.json 里的 payload_download_url 推导同目录下的
+        // halou-plugin-manifest.json CDN 路径，下载覆盖本地 bin/。
+        // 任何失败都吞掉，本地 fallback 仍可用。
+        private void TrySyncManifestFromCdn()
+        {
+            try
+            {
+                string dllUrl = _latestDownloadUrl;
+                if (string.IsNullOrWhiteSpace(dllUrl)) return;
+                if (!dllUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                    !dllUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return;
+
+                int q = dllUrl.IndexOf('?');
+                string baseUrl = q >= 0 ? dllUrl.Substring(0, q) : dllUrl;
+                int slash = baseUrl.LastIndexOf('/');
+                if (slash <= 0) return;
+                string manifestUrl = baseUrl.Substring(0, slash + 1) + "halou-plugin-manifest.json"
+                                     + (q >= 0 ? dllUrl.Substring(q) : string.Empty);
+
+                string json = RobustHttp.DownloadString(manifestUrl, null, s =>
+                {
+                    string t = s == null ? "" : s.TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+                    return t.Length > 0 && t[0] == '{';
+                });
+                if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(_localManifestPath)) return;
+
+                // 校验是合法 JSON 且能反序列化为 manifest 再落盘，避免污染本地缓存
+                if (PluginManifest.TryDeserialize(json) == null) return;
+                File.WriteAllText(_localManifestPath, json, System.Text.Encoding.UTF8);
+            }
+            catch
+            {
+                // 网络/权限/解析失败都不影响本地 fallback
             }
         }
 

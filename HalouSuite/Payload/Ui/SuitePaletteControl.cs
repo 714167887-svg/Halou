@@ -368,37 +368,37 @@ namespace HalouSuite.Payload
             {
                 Dock = System.Windows.Forms.DockStyle.Top,
                 ColumnCount = 2,
-                RowCount = 5,
+                RowCount = 4,
                 AutoSize = true,
                 AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink,
                 Font = new DrawingFont("Microsoft YaHei UI", 9f)
             };
             configPanel.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 92f));
             configPanel.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100f));
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < 4; i++)
             {
                 configPanel.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 30f));
             }
             settingsTab.Controls.Add(configPanel);
 
-            configPanel.Controls.Add(CreateFieldLabel("清单来源"), 0, 0);
+            // 清单来源字段保留实例（用于加载/保存配置），但不在 UI 中显示，避免暴露内部诊断路径给最终用户。
             _manifestSourceTextBox = CreateTextBox();
-            configPanel.Controls.Add(_manifestSourceTextBox, 1, 0);
+            _manifestSourceTextBox.Visible = false;
 
-            configPanel.Controls.Add(CreateFieldLabel("授权端点"), 0, 1);
+            configPanel.Controls.Add(CreateFieldLabel("授权端点"), 0, 0);
             _licenseEndpointTextBox = CreateTextBox();
-            configPanel.Controls.Add(_licenseEndpointTextBox, 1, 1);
+            configPanel.Controls.Add(_licenseEndpointTextBox, 1, 0);
 
-            configPanel.Controls.Add(CreateFieldLabel("凭证头"), 0, 2);
+            configPanel.Controls.Add(CreateFieldLabel("凭证头"), 0, 1);
             _credentialHeaderTextBox = CreateTextBox();
-            configPanel.Controls.Add(_credentialHeaderTextBox, 1, 2);
+            configPanel.Controls.Add(_credentialHeaderTextBox, 1, 1);
 
-            configPanel.Controls.Add(CreateFieldLabel("凭证值"), 0, 3);
+            configPanel.Controls.Add(CreateFieldLabel("凭证值"), 0, 2);
             _credentialValueTextBox = CreateTextBox();
             _credentialValueTextBox.UseSystemPasswordChar = true;
-            configPanel.Controls.Add(_credentialValueTextBox, 1, 3);
+            configPanel.Controls.Add(_credentialValueTextBox, 1, 2);
 
-            configPanel.Controls.Add(CreateFieldLabel("刷新秒数"), 0, 4);
+            configPanel.Controls.Add(CreateFieldLabel("刷新秒数"), 0, 3);
             _refreshSecondsInput = new System.Windows.Forms.NumericUpDown
             {
                 Dock = System.Windows.Forms.DockStyle.Fill,
@@ -407,7 +407,7 @@ namespace HalouSuite.Payload
                 Value = 300,
                 Font = new DrawingFont("Microsoft YaHei UI", 9f)
             };
-            configPanel.Controls.Add(_refreshSecondsInput, 1, 4);
+            configPanel.Controls.Add(_refreshSecondsInput, 1, 3);
 
             // 版本 / 更新分组
             System.Windows.Forms.GroupBox versionGroup = new System.Windows.Forms.GroupBox

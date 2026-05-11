@@ -165,6 +165,13 @@ namespace HalouSuite.Payload
             return serializer.Deserialize<PluginManifest>(json);
         }
 
+        // 供 HalouSuiteManager.TrySyncManifestFromCdn 校验下载内容用：解析失败返回 null，
+        // 不抛异常，便于调用方丢掉脏数据。
+        internal static PluginManifest TryDeserialize(string json)
+        {
+            try { return Deserialize(json); } catch { return null; }
+        }
+
         private static PluginManifest Normalize(PluginManifest manifest, string baseDirectory)
         {
             if (manifest == null)
@@ -223,7 +230,7 @@ namespace HalouSuite.Payload
                     new CadPluginFeature
                     {
                         Id = "zk",
-                        Title = "展开功能",
+                        Title = "展开功能(开缺待完善)",
                         Description = "加载并执行 ZKK 的 AutoLISP 入口。",
                         Kind = "lisp",
                         LoadPath = "ZK/ZKK_Unfold_V13.lsp",

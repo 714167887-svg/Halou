@@ -1,14 +1,19 @@
 ﻿param(
-    [string]$Version = '2.0.0'
+    [string]$Version = '2.0.0',
+    # 指定 ObjectARX/AutoCAD 安装目录（必须包含 acmgd.dll/acdbmgd.dll/accoremgd.dll）
+    [string]$AutocadDir = 'C:\Program Files\Autodesk\AutoCAD 2021',
+    # 可选的 ARX 标签：传入后输出文件名变成 HalouPayload.<Ver>.<ArxTag>.dll；不传则保持 HalouPayload.<Ver>.dll（向后兼容）
+    [string]$ArxTag = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $contractRoot = Join-Path (Split-Path -Parent $projectRoot) 'Contract'
 $dist = Join-Path $projectRoot 'dist'
-$out = Join-Path $dist ("HalouPayload.$Version.dll")
+$outName = if ($ArxTag) { "HalouPayload.$Version.$ArxTag.dll" } else { "HalouPayload.$Version.dll" }
+$out = Join-Path $dist $outName
 $csc = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-$autocadDir = 'C:\Program Files\Autodesk\AutoCAD 2021'
+$autocadDir = $AutocadDir
 
 if (-not (Test-Path $csc)) { throw "C# 编译器不存在: $csc" }
 
@@ -38,20 +43,23 @@ if (Test-Path (Join-Path $autocadDir 'acmgd.dll')) {
     )
 }
 
-# v1.1.75: 嵌入 OLE 辅助脚本（ps1/lsp），与 OLD host 一致；
-# 运行时 ExtractEmbeddedPayloads() 会按 "Payload.<subdir>.<filename>" 资源命名解压到 DLL 旁 OLE\
+# v2.0.16: 嵌入功能子目录（OLE/ZK/KB/JT）下的 .lsp/.ps1；
+# 运行时 ExtractEmbeddedPayloads() 会按 "Payload.<subdir>.<filename>" 资源命名解压到 DLL 旁 <subdir>\
 $payloadArgs = @()
-$oleDir = Join-Path (Split-Path -Parent (Split-Path -Parent $projectRoot)) 'OLE'
-if (Test-Path $oleDir) {
-    Get-ChildItem -Path $oleDir -File -Recurse:$false |
+$halouRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
+foreach ($sub in @('OLE','ZK','KB','JT')) {
+    $subDir = Join-Path $halouRoot $sub
+    if (-not (Test-Path $subDir)) {
+        Write-Host "  [warn] subdir not found: $subDir" -ForegroundColor Yellow
+        continue
+    }
+    Get-ChildItem -Path $subDir -File -Recurse:$false |
         Where-Object { $_.Extension -in '.lsp', '.ps1' } |
         ForEach-Object {
-            $resName = "Payload.OLE.$($_.Name)"
+            $resName = "Payload.$sub.$($_.Name)"
             $payloadArgs += "/resource:$($_.FullName),$resName"
-            Write-Host "  embed: OLE/$($_.Name) -> $resName"
+            Write-Host "  embed: $sub/$($_.Name) -> $resName"
         }
-} else {
-    Write-Host "  [warn] OLE dir not found: $oleDir" -ForegroundColor Yellow
 }
 
 & $csc /nologo /target:library /platform:x64 /optimize+ /out:$out `

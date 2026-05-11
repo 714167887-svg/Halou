@@ -4,7 +4,7 @@
   "Features": [
     {
       "Id": "zk",
-      "Title": "展开功能",
+      "Title": "展开功能(开缺待完善)",
       "Description": "加载并执行 ZKK AutoLISP 主入口。",
       "Kind": "lisp",
       "LoadPath": "ZK/ZKK_Unfold_V13.lsp",

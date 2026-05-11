@@ -90,9 +90,28 @@ namespace HalouSuite.Payload
             string lv = !string.IsNullOrWhiteSpace(info.LatestPayloadVersion)
                 ? info.LatestPayloadVersion.Trim()
                 : (!string.IsNullOrWhiteSpace(info.LatestVersion) ? info.LatestVersion.Trim() : CurrentVersion);
-            string ldu = !string.IsNullOrWhiteSpace(info.PayloadDownloadUrl)
-                ? info.PayloadDownloadUrl.Trim()
-                : info.DownloadUrl;
+
+            // 多 SDK 分发：按本进程加载的 acmgd 大版本号选 tag
+            // acmgd 24 → arx24（AutoCAD 2021/2022/2023）；25 → arx25（2024/2025）
+            string preferredTag = DetectArxTagForCurrentProcess();
+            string ldu = null;
+            if (!string.IsNullOrWhiteSpace(preferredTag)
+                && info.PayloadDownloadUrls != null
+                && info.PayloadDownloadUrls.Count > 0)
+            {
+                string urlForTag;
+                if (info.PayloadDownloadUrls.TryGetValue(preferredTag, out urlForTag)
+                    && !string.IsNullOrWhiteSpace(urlForTag))
+                {
+                    ldu = urlForTag.Trim();
+                }
+            }
+            if (string.IsNullOrWhiteSpace(ldu))
+            {
+                ldu = !string.IsNullOrWhiteSpace(info.PayloadDownloadUrl)
+                    ? info.PayloadDownloadUrl.Trim()
+                    : info.DownloadUrl;
+            }
             _latestVersion = lv;
             _latestDownloadUrl = ldu;
             _releaseNotes = info.ReleaseNotes;
@@ -150,6 +169,38 @@ namespace HalouSuite.Payload
                 _licenseStatus = LicenseStatus.Denied;
                 _licenseMessage = string.Format("✖ 账号「{0}」不在授权清单", accountName);
             }
+        }
+
+        // 探测本进程加载的 acmgd 的 AssemblyVersion 大版本号，映射到 ARX SDK 标签：
+        //   24.x → arx24（AutoCAD 2021/2022/2023）
+        //   25.x → arx25（AutoCAD 2024/2025）
+        // 失败 / 找不到 / 不识别 → 返回 null（调用方走 PayloadDownloadUrl 兜底）
+        private static string DetectArxTagForCurrentProcess()
+        {
+            try
+            {
+                System.Reflection.Assembly[] all = AppDomain.CurrentDomain.GetAssemblies();
+                for (int i = 0; i < all.Length; i++)
+                {
+                    System.Reflection.Assembly a = all[i];
+                    if (a == null) continue;
+                    string name;
+                    try { name = a.GetName().Name; }
+                    catch { continue; }
+                    if (string.IsNullOrEmpty(name)) continue;
+                    if (!string.Equals(name, "acmgd", StringComparison.OrdinalIgnoreCase)) continue;
+                    Version v = a.GetName().Version;
+                    if (v == null) return null;
+                    if (v.Major == 24) return "arx24";
+                    if (v.Major == 25) return "arx25";
+                    return "arx" + v.Major.ToString();
+                }
+            }
+            catch
+            {
+                // 忽略：探测失败就走默认 url
+            }
+            return null;
         }
     }
 }

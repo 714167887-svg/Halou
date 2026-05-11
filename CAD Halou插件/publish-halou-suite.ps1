@@ -36,7 +36,12 @@ param(
     [string]$Message = "",
     [string]$ReleaseRepo = "C:\Users\Administrator\Desktop\halou-release",
     [switch]$SkipBuild,
-    [switch]$DryRun
+    [switch]$DryRun,
+    # 多 ARX SDK 模式：传 @{ arx24='...AutoCAD 2021'; arx25='C:\ObjectARX\2024' }
+    # 不传则保持单 SDK 旧行为（HalouHost.dll / HalouPayload.<ver>.dll）
+    [hashtable]$ArxSdks,
+    # 多 SDK 模式下，license.json 的 payload_download_url 默认指向哪个 tag（旧客户端兼容）
+    [string]$DefaultArxTag = 'arx24'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -70,19 +75,45 @@ $newEntryText = [regex]::Replace($entryText, $rxVer, "public const string Payloa
 [System.IO.File]::WriteAllText($payloadEntryFile, $newEntryText, $utf8)
 
 # ---- 2. 编译 ----
+$multiSdk = $PSBoundParameters.ContainsKey('ArxSdks') -and $ArxSdks -and $ArxSdks.Count -gt 0
 if (-not $SkipBuild) {
-    Write-Step "编译三件套 (Contract / Host / Payload v$Version)"
-    & $buildAll -PayloadVersion $Version
+    if ($multiSdk) {
+        Write-Step ("编译三件套（多 SDK: " + ($ArxSdks.Keys -join ', ') + "）v$Version")
+        & $buildAll -PayloadVersion $Version -ArxSdks $ArxSdks
+    } else {
+        Write-Step "编译三件套 (Contract / Host / Payload v$Version)"
+        & $buildAll -PayloadVersion $Version
+    }
     if ($LASTEXITCODE -ne 0) { throw "构建失败，已退出" }
 } else {
     Write-Host "跳过编译（-SkipBuild）" -ForegroundColor Yellow
 }
 
 $contractDll = Join-Path $suiteRoot 'Contract\dist\HalouContract.dll'
-$hostDll     = Join-Path $suiteRoot 'Host\dist\HalouHost.dll'
-$payloadDll  = Join-Path $suiteRoot ("Payload\dist\HalouPayload." + $Version + ".dll")
-foreach ($p in @($contractDll, $hostDll, $payloadDll)) {
+if (-not (Test-Path $contractDll)) { throw "构建产物缺失：$contractDll" }
+
+# hostDlls / payloadDlls：tag -> 绝对路径；单 SDK 模式 tag = ''
+$hostDlls    = [ordered]@{}
+$payloadDlls = [ordered]@{}
+if ($multiSdk) {
+    foreach ($tag in $ArxSdks.Keys) {
+        $h = Join-Path $suiteRoot "Host\dist\HalouHost.$tag.dll"
+        $p = Join-Path $suiteRoot "Payload\dist\HalouPayload.$Version.$tag.dll"
+        if (-not (Test-Path $h)) { throw "构建产物缺失：$h" }
+        if (-not (Test-Path $p)) { throw "构建产物缺失：$p" }
+        $hostDlls[$tag]    = $h
+        $payloadDlls[$tag] = $p
+    }
+    if (-not $hostDlls.Contains($DefaultArxTag)) {
+        throw "DefaultArxTag '$DefaultArxTag' 不在 ArxSdks 列表中：$($ArxSdks.Keys -join ', ')"
+    }
+} else {
+    $h = Join-Path $suiteRoot 'Host\dist\HalouHost.dll'
+    $p = Join-Path $suiteRoot ("Payload\dist\HalouPayload.$Version.dll")
+    if (-not (Test-Path $h)) { throw "构建产物缺失：$h" }
     if (-not (Test-Path $p)) { throw "构建产物缺失：$p" }
+    $hostDlls['']    = $h
+    $payloadDlls[''] = $p
 }
 
 # ---- 3. 检查发布仓库 ----
@@ -118,7 +149,15 @@ if (-not $DryRun) {
     }
 
     # payload_download_url（独立于 host 字段）
-    $newUrl = "https://cdn.jsdelivr.net/gh/714167887-svg/halou-release@main/release/HalouPayload.$Version.dll"
+    # 多 SDK 模式：payload_download_url 指向 DefaultArxTag（向后兼容旧客户端），
+    #             并为每个非默认 tag 写 payload_download_url_<tag>
+    $urlBase = "https://cdn.jsdelivr.net/gh/714167887-svg/halou-release@main/release"
+    if ($multiSdk) {
+        $defaultPayloadName = "HalouPayload.$Version.$DefaultArxTag.dll"
+    } else {
+        $defaultPayloadName = "HalouPayload.$Version.dll"
+    }
+    $newUrl = "$urlBase/$defaultPayloadName"
     if ($licenseText -match '"payload_download_url"\s*:') {
         $licenseText = [regex]::Replace($licenseText,
             '"payload_download_url"\s*:\s*"[^"]*"',
@@ -127,6 +166,25 @@ if (-not $DryRun) {
         $licenseText = [regex]::Replace($licenseText,
             '("release_notes"\s*:)',
             "`"payload_download_url`": `"$newUrl`",`r`n  `$1")
+    }
+
+    # 多 SDK：为每个非默认 tag 写 payload_download_url_<tag>
+    if ($multiSdk) {
+        foreach ($tag in $ArxSdks.Keys) {
+            if ($tag -eq $DefaultArxTag) { continue }
+            $tagName = "HalouPayload.$Version.$tag.dll"
+            $tagUrl  = "$urlBase/$tagName"
+            $field   = "payload_download_url_$tag"
+            $rx      = '"' + [regex]::Escape($field) + '"\s*:\s*"[^"]*"'
+            if ($licenseText -match $rx) {
+                $licenseText = [regex]::Replace($licenseText, $rx,
+                    "`"$field`": `"$tagUrl`"")
+            } else {
+                $licenseText = [regex]::Replace($licenseText,
+                    '("release_notes"\s*:)',
+                    "`"$field`": `"$tagUrl`",`r`n  `$1")
+            }
+        }
     }
 
     # release_notes（这个改无害，host UI 也会读）
@@ -144,19 +202,39 @@ if (-not $DryRun) {
 
 # ---- 5. 同步文件到发布仓库 ----
 Write-Step "同步文件到发布仓库 $dstRelease"
-Copy-Item $payloadDll  (Join-Path $dstRelease ("HalouPayload." + $Version + ".dll")) -Force
-Copy-Item $hostDll     (Join-Path $dstRelease 'HalouHost.dll')                      -Force
-Copy-Item $contractDll (Join-Path $dstRelease 'HalouContract.dll')                   -Force
+Copy-Item $contractDll (Join-Path $dstRelease 'HalouContract.dll') -Force
+if ($multiSdk) {
+    foreach ($tag in $ArxSdks.Keys) {
+        Copy-Item $hostDlls[$tag]    (Join-Path $dstRelease "HalouHost.$tag.dll")              -Force
+        Copy-Item $payloadDlls[$tag] (Join-Path $dstRelease "HalouPayload.$Version.$tag.dll") -Force
+    }
+} else {
+    Copy-Item $hostDlls['']    (Join-Path $dstRelease 'HalouHost.dll')                       -Force
+    Copy-Item $payloadDlls[''] (Join-Path $dstRelease "HalouPayload.$Version.dll")           -Force
+}
 if (Test-Path $srcManifest) {
     Copy-Item $srcManifest (Join-Path $dstRelease 'halou-plugin-manifest.json') -Force
 }
 Copy-Item $srcLicense (Join-Path $ReleaseRepo 'license.json') -Force
 
-# 顺手清理 release 仓库里旧版本的 HalouPayload.*.dll（保留最近 3 个）
-Get-ChildItem $dstRelease -Filter 'HalouPayload.*.dll' |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -Skip 3 |
-    ForEach-Object { Write-Host "  清理旧版本：$($_.Name)" -ForegroundColor DarkGray; Remove-Item $_.FullName -Force }
+# 顺手清理 release 仓库里旧版本的 HalouPayload.*.dll（保留最近 N 个 × tag 数）
+$keepPerGroup = 3
+# 单 SDK：所有 HalouPayload.*.dll 是一组；多 SDK：按 tag 分组分别保留
+if ($multiSdk) {
+    foreach ($tag in $ArxSdks.Keys) {
+        Get-ChildItem $dstRelease -Filter ("HalouPayload.*." + $tag + ".dll") |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -Skip $keepPerGroup |
+            ForEach-Object { Write-Host "  清理旧版本：$($_.Name)" -ForegroundColor DarkGray; Remove-Item $_.FullName -Force }
+    }
+} else {
+    # 单 SDK 模式：只清理无 tag 后缀的旧 payload（避免误删多 SDK 历史产物）
+    Get-ChildItem $dstRelease -Filter 'HalouPayload.*.dll' |
+        Where-Object { $_.Name -match '^HalouPayload\.[\d\.]+(?:-[A-Za-z0-9\.]+)?\.dll$' } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -Skip $keepPerGroup |
+        ForEach-Object { Write-Host "  清理旧版本：$($_.Name)" -ForegroundColor DarkGray; Remove-Item $_.FullName -Force }
+}
 
 # ---- 6. Git ----
 if ($DryRun) {
@@ -187,8 +265,15 @@ try {
             cmd /c "git -c user.email=`"release@halou.local`" -c user.name=`"halou-release-bot`" commit -m `"$commitMsg`" 2>&1" | ForEach-Object { Write-Host $_ }
             cmd /c "git push 2>&1" | ForEach-Object { Write-Host $_ }
             Write-Host "`n=== 发布完成 v$Version ===" -ForegroundColor Green
-            Write-Host "  Payload : $(Split-Path -Leaf $payloadDll)"
-            Write-Host "  URL     : $newUrl"
+            if ($multiSdk) {
+                foreach ($tag in $ArxSdks.Keys) {
+                    Write-Host ("  Payload[$tag] : " + (Split-Path -Leaf $payloadDlls[$tag]))
+                }
+                Write-Host "  默认 URL    : $newUrl  (tag=$DefaultArxTag)"
+            } else {
+                Write-Host "  Payload : $(Split-Path -Leaf $payloadDlls[''])"
+                Write-Host "  URL     : $newUrl"
+            }
             Write-Host "  买家下次点「下载新版本」即可在线热重载，无需关 CAD。"
         }
     } finally {

@@ -102,9 +102,29 @@ namespace HalouSuite.Host
                 if (doc != null) doc.Editor.WriteMessage("\n[HalouHost] payloads 目录下没有 dll");
                 return;
             }
-            System.Array.Sort(files);
-            DiagLog.Write("Cmd", "HALOURELOAD: queuing " + files[files.Length - 1]);
-            loader.RequestReload(files[files.Length - 1], "manual reload");
+            // 按版本号选最新（不能用字典序：HalouPayload.2.0.9.dll > HalouPayload.2.0.12.dll 是错的）
+            string bestPath = null;
+            System.Version bestVer = null;
+            for (int i = 0; i < files.Length; i++)
+            {
+                string name = System.IO.Path.GetFileName(files[i]);
+                const string prefix = "HalouPayload.";
+                const string suffix = ".dll";
+                if (name.Length <= prefix.Length + suffix.Length) continue;
+                string mid = name.Substring(prefix.Length, name.Length - prefix.Length - suffix.Length);
+                System.Version v;
+                if (!System.Version.TryParse(mid, out v)) continue;
+                if (bestVer == null || v > bestVer) { bestVer = v; bestPath = files[i]; }
+            }
+            if (bestPath == null)
+            {
+                DiagLog.Write("Cmd", "HALOURELOAD: no parseable payload version");
+                Document doc2 = Application.DocumentManager.MdiActiveDocument;
+                if (doc2 != null) doc2.Editor.WriteMessage("\n[HalouHost] payloads 目录里没有可识别版本的 dll");
+                return;
+            }
+            DiagLog.Write("Cmd", "HALOURELOAD: queuing " + bestPath);
+            loader.RequestReload(bestPath, "manual reload");
         }
 
         [CommandMethod("HALOULKG")]

@@ -89,16 +89,33 @@ namespace HalouSuite.Payload
 
         public HalouSuiteManager()
         {
+            // 资源目录选择优先级：
+            //   1) host.PayloadDirectory（Host 通过 Assembly.Load(byte[]) 加载本 dll，所以本 dll Location 为空，
+            //      必须问 Host 才能拿到真实 dll 所在目录 %LOCALAPPDATA%\HalouSuite\payloads\）
+            //   2) Assembly.GetExecutingAssembly().Location（兼容旧路径：直接 LoadFrom 文件）
+            //   3) AppDomain.BaseDirectory（兜底；在 acad 里就是 acad.exe 所在目录，写权限受限，仅作为最后回退）
             string asmDir = null;
             try
             {
-                var loc = Assembly.GetExecutingAssembly().Location;
-                if (!string.IsNullOrEmpty(loc))
+                var host = PayloadEntry.CurrentHost;
+                if (host != null && !string.IsNullOrWhiteSpace(host.PayloadDirectory))
                 {
-                    asmDir = Path.GetDirectoryName(loc);
+                    asmDir = host.PayloadDirectory;
                 }
             }
             catch { }
+            if (string.IsNullOrEmpty(asmDir))
+            {
+                try
+                {
+                    var loc = Assembly.GetExecutingAssembly().Location;
+                    if (!string.IsNullOrEmpty(loc))
+                    {
+                        asmDir = Path.GetDirectoryName(loc);
+                    }
+                }
+                catch { }
+            }
             if (string.IsNullOrEmpty(asmDir))
             {
                 asmDir = AppDomain.CurrentDomain.BaseDirectory;

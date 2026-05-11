@@ -1,13 +1,18 @@
 ﻿param(
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+    # 指定 ObjectARX/AutoCAD 安装目录（必须包含 acmgd.dll/acdbmgd.dll/accoremgd.dll）
+    [string]$AutocadDir = 'C:\Program Files\Autodesk\AutoCAD 2021',
+    # 可选的 ARX 标签：传入后输出文件名变成 HalouHost.<ArxTag>.dll；不传则保持 HalouHost.dll（向后兼容）
+    [string]$ArxTag = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $contractRoot = Join-Path (Split-Path -Parent $projectRoot) 'Contract'
-$out = Join-Path $projectRoot 'dist\HalouHost.dll'
+$outName = if ($ArxTag) { "HalouHost.$ArxTag.dll" } else { 'HalouHost.dll' }
+$out = Join-Path $projectRoot "dist\$outName"
 $csc = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-$autocadDir = 'C:\Program Files\Autodesk\AutoCAD 2021'
+$autocadDir = $AutocadDir
 
 if (-not (Test-Path $csc)) { throw "C# 编译器不存在: $csc" }
 if (-not (Test-Path (Join-Path $autocadDir 'acmgd.dll'))) { throw "AutoCAD 托管库未找到: $autocadDir" }
