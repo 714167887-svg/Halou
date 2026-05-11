@@ -17,7 +17,7 @@ namespace HalouSuite.Payload
     /// </summary>
     public sealed class PayloadEntry : IPayload
     {
-        public const string PayloadVersion = "2.0.6";
+        public const string PayloadVersion = "2.0.8";
         private IHostServices _host;
         private HalouSuiteManager _suite;
         private static readonly string LogPath =

@@ -149,25 +149,28 @@ namespace HalouSuite.Payload
             try { if (File.Exists(p)) File.Delete(p); } catch { }
         }
 
-        // 用 ReflectionOnlyLoadFrom 检查 DLL 是不是 Phase 2 的 Halou Payload 格式
+        // 检查 DLL 是不是 Phase 2 的 Halou Payload 格式。
+        //
+        // 历史教训：之前用 ReflectionOnlyLoad + GetTypes 判断，
+        // 但 PayloadEntry 实现了 HalouContract 接口，ReflectionOnly 上下文里
+        // 没注册解析器时，GetTypes 抛 ReflectionTypeLoadException，
+        // 而 rt.Types 里 PayloadEntry 这个类型就是 null（因为接口引用没解析）→ 误判。
+        // 这导致所有 Phase 2 客户端「下载新版 Payload」都会被自己拒绝（鸡生蛋）。
+        //
+        // 现在改用字节扫描：直接在 DLL bytes 里搜 "HalouSuite.Payload" 和
+        // "PayloadEntry" 这两段字符串。CLR metadata #Strings heap 把 namespace
+        // 和 type name 分开存（NUL 分隔的 UTF-8），所以不能搜整串"HalouSuite.Payload.PayloadEntry"，
+        // 必须分别搜两段。旧 JsqClipboardCadPlugin.dll 完全没有 "HalouSuite.Payload" 字符串，绝不会误判。
         private static bool IsHalouPayloadDll(string path, out string errMsg)
         {
             errMsg = null;
             try
             {
-                // 读字节再 ReflectionOnlyLoad，避免锁文件影响后续 Move
                 byte[] bytes = File.ReadAllBytes(path);
-                System.Reflection.Assembly asm = System.Reflection.Assembly.ReflectionOnlyLoad(bytes);
-                Type[] types;
-                try { types = asm.GetTypes(); }
-                catch (System.Reflection.ReflectionTypeLoadException rt) { types = rt.Types; }
-                if (types == null) { errMsg = "无法读取类型表"; return false; }
-                foreach (Type t in types)
-                {
-                    if (t == null) continue;
-                    if (t.FullName == "HalouSuite.Payload.PayloadEntry") return true;
-                }
-                errMsg = "缺少 HalouSuite.Payload.PayloadEntry 类型";
+                byte[] ns = System.Text.Encoding.UTF8.GetBytes("HalouSuite.Payload");
+                byte[] tn = System.Text.Encoding.UTF8.GetBytes("PayloadEntry");
+                if (ContainsBytes(bytes, ns) && ContainsBytes(bytes, tn)) return true;
+                errMsg = "未在 DLL 元数据中找到 HalouSuite.Payload / PayloadEntry";
                 return false;
             }
             catch (Exception ex)
@@ -175,6 +178,25 @@ namespace HalouSuite.Payload
                 errMsg = ex.GetType().Name + ": " + ex.Message;
                 return false;
             }
+        }
+
+        private static bool ContainsBytes(byte[] hay, byte[] needle)
+        {
+            if (needle == null || needle.Length == 0) return false;
+            if (hay == null || hay.Length < needle.Length) return false;
+            int last = hay.Length - needle.Length;
+            byte n0 = needle[0];
+            for (int i = 0; i <= last; i++)
+            {
+                if (hay[i] != n0) continue;
+                bool ok = true;
+                for (int j = 1; j < needle.Length; j++)
+                {
+                    if (hay[i + j] != needle[j]) { ok = false; break; }
+                }
+                if (ok) return true;
+            }
+            return false;
         }
 
         private static void PostBack(Action<bool, string> cb, bool ok, string msg)
