@@ -5,7 +5,7 @@
   "download_url": "https://raw.githubusercontent.com/714167887-svg/halou-release/main/release/JsqClipboardCadPlugin.dll",
   "latest_payload_version": "2.0.25",
   "payload_download_url": "https://cdn.jsdelivr.net/gh/714167887-svg/halou-release@main/release/HalouPayload.2.0.25.dll",
-  "release_notes": "perf: 异步化网络刷新 + 授权校验，刷新间隔最小 60s -> 300s，消除 acad 主线程卡顿",
+  "release_notes": "v2.0.25 紧急修复：彻底解决 acad 报「请求的范围扩展超过了数组的结尾」崩溃；托盘小猫图标改回 16px。累计更新：DropTarget 防抖避免拖拽抖动崩溃 / 新图标设计 / 账号面板加大头像。",
   "default_allowed": false,
   "kill_switch": false,
   "kill_reason": "",
