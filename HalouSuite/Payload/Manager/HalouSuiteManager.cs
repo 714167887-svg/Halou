@@ -444,11 +444,11 @@ namespace HalouSuite.Payload
 
         private static Icon BuildSuiteIcon()
         {
+            // v2.0.25：状态栏 TrayItem 标准尺寸 16x16；32px 显得过大违和。回到 16px。
             // v2.0.24：彻底回退到最简单可靠形式——单尺寸 Bitmap.GetHicon() + Icon.FromHandle。
             // multi-size ICO 流方式（v2.0.19~v2.0.23）反复出现 "请求的范围扩展超过了数组的结尾" 异常，
             // 在 acad 进程中复现率高（可能因 GDI+ 在 acad 的 STA 线程上对 PNG-ICO 解析路径有 bug）。
-            // 高 DPI 略模糊可以接受；稳定性优先。
-            using (Bitmap bmp = RenderSuiteCatBitmap(32))
+            using (Bitmap bmp = RenderSuiteCatBitmap(16))
             {
                 IntPtr hIcon = bmp.GetHicon();
                 // FromHandle 不拥有 handle；Clone 出独立 Icon 后 DestroyIcon 释放原 handle，
