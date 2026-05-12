@@ -330,7 +330,7 @@ namespace HalouSuite.Payload
             accountPanel.Controls.Add(_accountNameTextBox, 1, 0);
             accountPanel.SetColumnSpan(_accountNameTextBox, 2);
 
-            accountPanel.Controls.Add(CreateFieldLabel("登录令牌"), 0, 1);
+            accountPanel.Controls.Add(CreateFieldLabel("密码"), 0, 1);
             _accountTokenTextBox = CreateTextBox();
             _accountTokenTextBox.UseSystemPasswordChar = true;
             accountPanel.Controls.Add(_accountTokenTextBox, 1, 1);
