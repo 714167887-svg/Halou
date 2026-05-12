@@ -495,88 +495,134 @@ namespace HalouSuite.Payload
             {
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
                 g.Clear(DrawingColor.Transparent);
 
                 float s = size / 32f;
-                DrawingColor outline = DrawingColor.FromArgb(62, 45, 39);
-                DrawingColor fur = DrawingColor.FromArgb(238, 197, 133);
-                DrawingColor innerEar = DrawingColor.FromArgb(244, 160, 176);
-                DrawingColor eye = DrawingColor.FromArgb(30, 30, 30);
-                DrawingColor nose = DrawingColor.FromArgb(230, 120, 140);
-                DrawingColor cheek = DrawingColor.FromArgb(255, 220, 190);
+                DrawingColor outline = DrawingColor.FromArgb(70, 50, 42);
+                DrawingColor fur = DrawingColor.FromArgb(248, 215, 165);
+                DrawingColor furShade = DrawingColor.FromArgb(232, 188, 130);
+                DrawingColor innerEar = DrawingColor.FromArgb(248, 170, 188);
+                DrawingColor eyeWhite = DrawingColor.White;
+                DrawingColor eye = DrawingColor.FromArgb(40, 30, 30);
+                DrawingColor nose = DrawingColor.FromArgb(235, 130, 150);
+                DrawingColor cheek = DrawingColor.FromArgb(252, 175, 180);
+                DrawingColor highlight = DrawingColor.White;
 
-                // 左右耳（先画耳朵，让头部覆盖耳根，更自然）
-                PointF[] leftEar = { new PointF(4 * s, 13 * s), new PointF(8 * s, 2 * s), new PointF(13 * s, 11 * s) };
-                PointF[] rightEar = { new PointF(28 * s, 13 * s), new PointF(24 * s, 2 * s), new PointF(19 * s, 11 * s) };
-                using (SolidBrush b = new SolidBrush(outline))
+                float penOutline = Math.Max(1f, 1.4f * s);
+                float penWhisker = Math.Max(0.7f, 0.8f * s);
+
+                // ===== \u8033\u6735\uff08\u8d1d\u585e\u5c14\u5706\u6da6\u4e09\u89d2\uff0c\u5148\u753b outline \u540e\u753b\u5185\u8033\uff09 =====
+                using (System.Drawing.Drawing2D.GraphicsPath leftEar = new System.Drawing.Drawing2D.GraphicsPath())
+                using (System.Drawing.Drawing2D.GraphicsPath rightEar = new System.Drawing.Drawing2D.GraphicsPath())
                 {
-                    g.FillPolygon(b, leftEar);
-                    g.FillPolygon(b, rightEar);
+                    // \u5de6\u8033\uff1a\u5904\u4e8e\u5934\u90e8\u5de6\u4e0a\u65b9
+                    leftEar.AddBezier(5f * s, 14f * s, 4.5f * s, 6f * s, 9f * s, 3f * s, 12f * s, 7f * s);
+                    leftEar.AddBezier(12f * s, 7f * s, 14f * s, 11f * s, 11f * s, 13.5f * s, 5f * s, 14f * s);
+                    leftEar.CloseFigure();
+
+                    rightEar.AddBezier(27f * s, 14f * s, 27.5f * s, 6f * s, 23f * s, 3f * s, 20f * s, 7f * s);
+                    rightEar.AddBezier(20f * s, 7f * s, 18f * s, 11f * s, 21f * s, 13.5f * s, 27f * s, 14f * s);
+                    rightEar.CloseFigure();
+
+                    using (SolidBrush b = new SolidBrush(fur)) { g.FillPath(b, leftEar); g.FillPath(b, rightEar); }
+                    using (Pen pen = new Pen(outline, penOutline)) { g.DrawPath(pen, leftEar); g.DrawPath(pen, rightEar); }
                 }
-                PointF[] leftEarInner = { new PointF(6.6f * s, 11.5f * s), new PointF(8.6f * s, 5.5f * s), new PointF(11.2f * s, 10.5f * s) };
-                PointF[] rightEarInner = { new PointF(25.4f * s, 11.5f * s), new PointF(23.4f * s, 5.5f * s), new PointF(20.8f * s, 10.5f * s) };
+                // \u5185\u8033\uff08\u7c89\u8272\u5c0f\u4e09\u89d2\uff09
+                PointF[] leftEarInner = { new PointF(7.5f * s, 12f * s), new PointF(9.2f * s, 6.5f * s), new PointF(11f * s, 10.5f * s) };
+                PointF[] rightEarInner = { new PointF(24.5f * s, 12f * s), new PointF(22.8f * s, 6.5f * s), new PointF(21f * s, 10.5f * s) };
                 using (SolidBrush b = new SolidBrush(innerEar))
                 {
                     g.FillPolygon(b, leftEarInner);
                     g.FillPolygon(b, rightEarInner);
                 }
 
-                // 头部椭圆
-                using (SolidBrush b = new SolidBrush(fur))
+                // ===== \u5934\u90e8\u5706\u8138 =====
+                System.Drawing.RectangleF head = new System.Drawing.RectangleF(3f * s, 9.5f * s, 26f * s, 21f * s);
+                using (SolidBrush b = new SolidBrush(fur)) g.FillEllipse(b, head);
+                // \u4e0b\u534a\u90e8\u5fae\u9634\u5f71\uff08\u8868\u73b0\u7acb\u4f53\u611f\uff09
+                using (System.Drawing.Drawing2D.LinearGradientBrush lgb = new System.Drawing.Drawing2D.LinearGradientBrush(
+                    head, DrawingColor.FromArgb(0, fur), DrawingColor.FromArgb(60, furShade),
+                    System.Drawing.Drawing2D.LinearGradientMode.Vertical))
                 {
-                    g.FillEllipse(b, 3 * s, 8 * s, 26 * s, 22 * s);
+                    g.FillEllipse(lgb, head);
                 }
-                using (Pen pen = new Pen(outline, Math.Max(1f, 1.3f * s)))
-                {
-                    g.DrawEllipse(pen, 3 * s, 8 * s, 26 * s, 22 * s);
-                }
+                using (Pen pen = new Pen(outline, penOutline)) g.DrawEllipse(pen, head);
 
-                // 脸颊
+                // ===== \u8138\u988a\u817e\u7ea2\uff08\u5927\u70b9\u7c89\u8272\uff09 =====
                 using (SolidBrush b = new SolidBrush(cheek))
                 {
-                    g.FillEllipse(b, 5.5f * s, 21.5f * s, 5.5f * s, 3.6f * s);
-                    g.FillEllipse(b, 21 * s, 21.5f * s, 5.5f * s, 3.6f * s);
+                    g.FillEllipse(b, 4.5f * s, 20.5f * s, 6.5f * s, 4.2f * s);
+                    g.FillEllipse(b, 21f * s, 20.5f * s, 6.5f * s, 4.2f * s);
                 }
 
-                // 眼睛
+                // ===== \u773c\u775b\uff08\u5927\u5706 + \u9ad8\u5149 + \u775b\u6bdb\uff09 =====
+                System.Drawing.RectangleF leftEye = new System.Drawing.RectangleF(8.2f * s, 14.5f * s, 5.0f * s, 6f * s);
+                System.Drawing.RectangleF rightEye = new System.Drawing.RectangleF(18.8f * s, 14.5f * s, 5.0f * s, 6f * s);
                 using (SolidBrush b = new SolidBrush(eye))
                 {
-                    g.FillEllipse(b, 9 * s, 16 * s, 3.6f * s, 4.6f * s);
-                    g.FillEllipse(b, 19.4f * s, 16 * s, 3.6f * s, 4.6f * s);
+                    g.FillEllipse(b, leftEye);
+                    g.FillEllipse(b, rightEye);
                 }
-                using (SolidBrush b = new SolidBrush(DrawingColor.White))
+                // \u4e3b\u9ad8\u5149\uff08\u5de6\u4e0a\uff09
+                using (SolidBrush b = new SolidBrush(highlight))
                 {
-                    g.FillEllipse(b, 9.7f * s, 16.5f * s, 1.3f * s, 1.3f * s);
-                    g.FillEllipse(b, 20.1f * s, 16.5f * s, 1.3f * s, 1.3f * s);
+                    g.FillEllipse(b, 9.3f * s, 15.5f * s, 1.7f * s, 1.9f * s);
+                    g.FillEllipse(b, 19.9f * s, 15.5f * s, 1.7f * s, 1.9f * s);
+                    // \u526f\u9ad8\u5149\uff08\u53f3\u4e0b\uff09
+                    g.FillEllipse(b, 11.8f * s, 18.8f * s, 0.9f * s, 0.9f * s);
+                    g.FillEllipse(b, 22.4f * s, 18.8f * s, 0.9f * s, 0.9f * s);
+                }
+                // \u775b\u6bdb\uff08\u773c\u775b\u4e0a\u65b9\u4e09\u6839\u8f7b\u5fae\u7565\u504f\u4e0a\u7684\u5c0f\u7ebf\uff09\uff0c\u4ec5 size>=24 \u624d\u753b
+                if (size >= 24)
+                {
+                    using (Pen pen = new Pen(outline, Math.Max(0.7f, 0.7f * s)))
+                    {
+                        pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+                        pen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+                        g.DrawLine(pen, 8.5f * s, 13.6f * s, 9.5f * s, 14.2f * s);
+                        g.DrawLine(pen, 10.5f * s, 13.4f * s, 11f * s, 14.2f * s);
+                        g.DrawLine(pen, 21f * s, 13.4f * s, 21.5f * s, 14.2f * s);
+                        g.DrawLine(pen, 22.5f * s, 13.6f * s, 23.5f * s, 14.2f * s);
+                    }
                 }
 
-                // 鼻子（倒三角，圆角效果靠抗锯齿 + 小尺寸即可）
-                PointF[] noseTri = { new PointF(14.4f * s, 21 * s), new PointF(17.6f * s, 21 * s), new PointF(16 * s, 23 * s) };
-                using (SolidBrush b = new SolidBrush(nose))
+                // ===== \u9f3b\u5b50\uff08\u5c0f\u5fc3\u5f62\u8fd1\u4f3c\uff1a\u4e24\u4e2a\u5706\u4e0a\u90e8 + \u4e0b\u4e09\u89d2\uff09 =====
+                using (System.Drawing.Drawing2D.GraphicsPath nosePath = new System.Drawing.Drawing2D.GraphicsPath())
                 {
-                    g.FillPolygon(b, noseTri);
+                    nosePath.AddBezier(16f * s, 23f * s, 14f * s, 22.5f * s, 13.6f * s, 20.6f * s, 14.8f * s, 20.4f * s);
+                    nosePath.AddBezier(14.8f * s, 20.4f * s, 15.6f * s, 20.4f * s, 16f * s, 20.9f * s, 16f * s, 21.2f * s);
+                    nosePath.AddBezier(16f * s, 21.2f * s, 16f * s, 20.9f * s, 16.4f * s, 20.4f * s, 17.2f * s, 20.4f * s);
+                    nosePath.AddBezier(17.2f * s, 20.4f * s, 18.4f * s, 20.6f * s, 18f * s, 22.5f * s, 16f * s, 23f * s);
+                    nosePath.CloseFigure();
+                    using (SolidBrush b = new SolidBrush(nose)) g.FillPath(b, nosePath);
                 }
 
-                // 嘴：两段小弧
+                // ===== \u5634 \u03c9 \u5f62 =====
                 using (Pen pen = new Pen(outline, Math.Max(1f, 1.1f * s)))
                 {
                     pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
                     pen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
-                    g.DrawArc(pen, 13 * s, 22.5f * s, 3 * s, 3 * s, 20, 140);
-                    g.DrawArc(pen, 16 * s, 22.5f * s, 3 * s, 3 * s, 20, 140);
+                    // \u4ece\u9f3b\u5b50\u4e0b\u65b9\u5230\u53e3\u4e2d
+                    g.DrawLine(pen, 16f * s, 23f * s, 16f * s, 24.5f * s);
+                    // \u4e24\u4e2a\u5c0f\u5f27 \u03c9
+                    g.DrawArc(pen, 13f * s, 23.6f * s, 3f * s, 2.6f * s, 0, 180);
+                    g.DrawArc(pen, 16f * s, 23.6f * s, 3f * s, 2.6f * s, 0, 180);
                 }
 
-                // 胡须（仅在 size >= 24 时画，避免 16px 太挤）
+                // ===== \u80e1\u987b\uff08size>=24 \u624d\u753b\uff0c16px \u592a\u6324\uff09 =====
                 if (size >= 24)
                 {
-                    using (Pen pen = new Pen(outline, Math.Max(0.8f, 0.7f * s)))
+                    using (Pen pen = new Pen(outline, penWhisker))
                     {
                         pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
                         pen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
-                        g.DrawLine(pen, 2 * s, 22 * s, 7 * s, 22.6f * s);
-                        g.DrawLine(pen, 2 * s, 24 * s, 7 * s, 24 * s);
-                        g.DrawLine(pen, 25 * s, 22.6f * s, 30 * s, 22 * s);
-                        g.DrawLine(pen, 25 * s, 24 * s, 30 * s, 24 * s);
+                        g.DrawLine(pen, 1.5f * s, 21f * s, 6.5f * s, 22f * s);
+                        g.DrawLine(pen, 1.5f * s, 23f * s, 6.5f * s, 23.3f * s);
+                        g.DrawLine(pen, 1.5f * s, 25f * s, 6.5f * s, 24.6f * s);
+                        g.DrawLine(pen, 25.5f * s, 22f * s, 30.5f * s, 21f * s);
+                        g.DrawLine(pen, 25.5f * s, 23.3f * s, 30.5f * s, 23f * s);
+                        g.DrawLine(pen, 25.5f * s, 24.6f * s, 30.5f * s, 25f * s);
                     }
                 }
             }
