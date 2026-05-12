@@ -488,7 +488,7 @@ namespace HalouSuite.Payload
             }
         }
 
-        private static Bitmap RenderSuiteCatBitmap(int size)
+        internal static Bitmap RenderSuiteCatBitmap(int size)
         {
             Bitmap bmp = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             using (Graphics g = Graphics.FromImage(bmp))

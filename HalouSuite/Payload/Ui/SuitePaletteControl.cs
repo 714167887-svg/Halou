@@ -285,6 +285,46 @@ namespace HalouSuite.Payload
             accountPanel.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100f));
             accountTab.Controls.Add(accountPanel);
 
+            // v2.0.20：账号 Tab 顶部加个小猫头像 header
+            System.Windows.Forms.Panel accountHeader = new System.Windows.Forms.Panel
+            {
+                Dock = System.Windows.Forms.DockStyle.Top,
+                Height = 60,
+                Padding = new System.Windows.Forms.Padding(2, 2, 2, 8)
+            };
+            System.Windows.Forms.PictureBox catAvatar = new System.Windows.Forms.PictureBox
+            {
+                Image = HalouSuiteManager.RenderSuiteCatBitmap(48),
+                SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom,
+                Width = 48,
+                Height = 48,
+                Location = new System.Drawing.Point(2, 2),
+                BackColor = DrawingColor.Transparent
+            };
+            accountHeader.Controls.Add(catAvatar);
+
+            System.Windows.Forms.Label catTitle = new System.Windows.Forms.Label
+            {
+                Text = "Halou 插件集合",
+                Font = new DrawingFont("Microsoft YaHei UI", 11f, System.Drawing.FontStyle.Bold),
+                Location = new System.Drawing.Point(58, 4),
+                AutoSize = true,
+                BackColor = DrawingColor.Transparent
+            };
+            accountHeader.Controls.Add(catTitle);
+
+            System.Windows.Forms.Label catSubtitle = new System.Windows.Forms.Label
+            {
+                Text = "在此登录账号、激活授权与同步配置",
+                Font = new DrawingFont("Microsoft YaHei UI", 8.6f),
+                Location = new System.Drawing.Point(58, 30),
+                AutoSize = true,
+                BackColor = DrawingColor.Transparent
+            };
+            accountHeader.Controls.Add(catSubtitle);
+
+            accountTab.Controls.Add(accountHeader);
+
             accountPanel.Controls.Add(CreateFieldLabel("账号名"), 0, 0);
             _accountNameTextBox = CreateTextBox();
             accountPanel.Controls.Add(_accountNameTextBox, 1, 0);
