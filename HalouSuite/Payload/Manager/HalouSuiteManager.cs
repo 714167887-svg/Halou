@@ -444,52 +444,26 @@ namespace HalouSuite.Payload
 
         private static Icon BuildSuiteIcon()
         {
-            // v2.0.23：multi-size ICO（16/24/32/48/64）+ PNG sub-images。
-            // 修复 v2.0.22 崩溃：Icon ctor 保留 MemoryStream 引用（延迟读取），不能用 using 立即释放，
-            // 否则后续渲染时抛 ArgumentException「请求的范围扩展超过了数组的结尾」。
-            int[] sizes = new[] { 16, 24, 32, 48, 64 };
-            List<byte[]> pngs = new List<byte[]>(sizes.Length);
-            foreach (int s in sizes)
+            // v2.0.24：彻底回退到最简单可靠形式——单尺寸 Bitmap.GetHicon() + Icon.FromHandle。
+            // multi-size ICO 流方式（v2.0.19~v2.0.23）反复出现 "请求的范围扩展超过了数组的结尾" 异常，
+            // 在 acad 进程中复现率高（可能因 GDI+ 在 acad 的 STA 线程上对 PNG-ICO 解析路径有 bug）。
+            // 高 DPI 略模糊可以接受；稳定性优先。
+            using (Bitmap bmp = RenderSuiteCatBitmap(32))
             {
-                using (Bitmap bmp = RenderSuiteCatBitmap(s))
-                using (MemoryStream pngMs = new MemoryStream())
+                IntPtr hIcon = bmp.GetHicon();
+                // FromHandle 不拥有 handle；Clone 出独立 Icon 后 DestroyIcon 释放原 handle，
+                // 避免 GDI handle 泄漏。
+                using (Icon temp = Icon.FromHandle(hIcon))
                 {
-                    bmp.Save(pngMs, System.Drawing.Imaging.ImageFormat.Png);
-                    pngs.Add(pngMs.ToArray());
+                    Icon clone = (Icon)temp.Clone();
+                    DestroyIcon(hIcon);
+                    return clone;
                 }
             }
-
-            byte[] iconBytes;
-            using (MemoryStream ms = new MemoryStream())
-            using (BinaryWriter bw = new BinaryWriter(ms))
-            {
-                // ICONDIR
-                bw.Write((short)0);              // Reserved
-                bw.Write((short)1);              // Type = icon
-                bw.Write((short)sizes.Length);   // Count
-
-                int offset = 6 + 16 * sizes.Length;
-                for (int i = 0; i < sizes.Length; i++)
-                {
-                    int s = sizes[i];
-                    bw.Write((byte)(s >= 256 ? 0 : s)); // width
-                    bw.Write((byte)(s >= 256 ? 0 : s)); // height
-                    bw.Write((byte)0);                  // colorCount
-                    bw.Write((byte)0);                  // reserved
-                    bw.Write((short)1);                 // planes
-                    bw.Write((short)32);                // bitCount
-                    bw.Write((int)pngs[i].Length);      // size
-                    bw.Write((int)offset);              // offset
-                    offset += pngs[i].Length;
-                }
-                foreach (byte[] p in pngs) bw.Write(p);
-                bw.Flush();
-                iconBytes = ms.ToArray();
-            }
-            // Icon 必须持有未释放的 stream（延迟读取），故不 dispose iconStream。
-            MemoryStream iconStream = new MemoryStream(iconBytes, false);
-            return new Icon(iconStream);
         }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        private static extern bool DestroyIcon(IntPtr handle);
 
         internal static Bitmap RenderSuiteCatBitmap(int size)
         {
