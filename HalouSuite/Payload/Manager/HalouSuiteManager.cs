@@ -444,7 +444,9 @@ namespace HalouSuite.Payload
 
         private static Icon BuildSuiteIcon()
         {
-            // v2.0.18+：用 GDI+ 矢量风格绘制 + multi-size ICO（16/24/32/48/64），高 DPI 下也清晰。
+            // v2.0.23：multi-size ICO（16/24/32/48/64）+ PNG sub-images。
+            // 修复 v2.0.22 崩溃：Icon ctor 保留 MemoryStream 引用（延迟读取），不能用 using 立即释放，
+            // 否则后续渲染时抛 ArgumentException「请求的范围扩展超过了数组的结尾」。
             int[] sizes = new[] { 16, 24, 32, 48, 64 };
             List<byte[]> pngs = new List<byte[]>(sizes.Length);
             foreach (int s in sizes)
@@ -457,6 +459,7 @@ namespace HalouSuite.Payload
                 }
             }
 
+            byte[] iconBytes;
             using (MemoryStream ms = new MemoryStream())
             using (BinaryWriter bw = new BinaryWriter(ms))
             {
@@ -481,11 +484,11 @@ namespace HalouSuite.Payload
                 }
                 foreach (byte[] p in pngs) bw.Write(p);
                 bw.Flush();
-                ms.Position = 0;
-                // 必须 new MemoryStream(copy) 否则 Icon ctor 持有引用 + 我们 dispose 会失效；
-                // 但 new Icon(Stream) 文档说会读完即释放依赖，安全；如出问题改为 byte[] -> 新 stream。
-                return new Icon(ms);
+                iconBytes = ms.ToArray();
             }
+            // Icon 必须持有未释放的 stream（延迟读取），故不 dispose iconStream。
+            MemoryStream iconStream = new MemoryStream(iconBytes, false);
+            return new Icon(iconStream);
         }
 
         internal static Bitmap RenderSuiteCatBitmap(int size)
