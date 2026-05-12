@@ -84,6 +84,8 @@ namespace HalouSuite.Payload
         // 拖拽接管（DocumentIntegration 文件使用）
         private readonly Dictionary<IntPtr, HalouImageDropTarget> _installedDropTargets
             = new Dictionary<IntPtr, HalouImageDropTarget>();
+        // v2.0.18：DocumentActivated 高频触发，用 Timer 防抖（合并 500ms 内多次调用）
+        private System.Windows.Forms.Timer _dropInstallTimer;
 
         // AutoLoad（DocumentIntegration 文件使用）
         private const string AutoLoadDocFlag = "HalouSuite.AutoLoaded";
@@ -338,6 +340,13 @@ namespace HalouSuite.Payload
                 _refreshTimer.Stop();
                 _refreshTimer.Dispose();
                 _refreshTimer = null;
+            }
+
+            if (_dropInstallTimer != null)
+            {
+                try { _dropInstallTimer.Stop(); } catch { }
+                try { _dropInstallTimer.Dispose(); } catch { }
+                _dropInstallTimer = null;
             }
 
             if (_hotKeyWindow != null)

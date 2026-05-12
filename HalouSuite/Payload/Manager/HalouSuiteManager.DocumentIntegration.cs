@@ -84,7 +84,27 @@ namespace HalouSuite.Payload
 
         private void OnDocumentActivatedForDrop(object sender, DocumentCollectionEventArgs e)
         {
-            // 重新扫描子窗口；InstallImageDropTarget 内部会跳过已挂载的 hwnd
+            // v2.0.18：DocumentActivated 高频触发（每次切换文档、打开图纸都走），
+            // 原实现每次都同步 EnumChildWindows + Register/Revoke DragDrop（系统调用），频繁切文档会加重 UI 线程负担。
+            // 改为：如果已经成功挂上过（6 以上任意窗口）则跳过；否则用 Timer 防抖 500ms 后才调用 InstallImageDropTarget。
+            try
+            {
+                if (_installedDropTargets.Count > 0) return;
+                if (_dropInstallTimer == null)
+                {
+                    _dropInstallTimer = new System.Windows.Forms.Timer();
+                    _dropInstallTimer.Interval = 500;
+                    _dropInstallTimer.Tick += OnDropInstallTimerTick;
+                }
+                _dropInstallTimer.Stop();
+                _dropInstallTimer.Start();
+            }
+            catch { }
+        }
+
+        private void OnDropInstallTimerTick(object sender, EventArgs e)
+        {
+            try { _dropInstallTimer.Stop(); } catch { }
             try { InstallImageDropTarget(); } catch { }
         }
 
