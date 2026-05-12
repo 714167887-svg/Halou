@@ -59,7 +59,7 @@ namespace HalouSuite.Payload
                     return t.Length > 0 && t[0] == '{';
                 });
                 LicenseInfo info = LicenseInfo.Parse(json);
-                ApplyLicense(info, accountName);
+                ApplyLicense(info, accountName, _configuration != null ? _configuration.AccountToken : null);
             }
             catch (System.Exception ex)
             {
@@ -72,7 +72,7 @@ namespace HalouSuite.Payload
             }
         }
 
-        private void ApplyLicense(LicenseInfo info, string accountName)
+        private void ApplyLicense(LicenseInfo info, string accountName, string accountToken)
         {
             // 默认不限制功能；若命中某个有功能白名单的账号再覆盖
             _allowedFeatures = null;
@@ -134,6 +134,18 @@ namespace HalouSuite.Payload
             LicenseAccountInfo acct;
             if (info.Accounts != null && info.Accounts.TryGetValue(accountName.Trim(), out acct) && acct != null)
             {
+                // 密码校验：acct.Password 非空时要求 accountToken 全量匹配。
+                // 为空时保持向后兼容（老账号只靠名称匹配）。
+                if (!string.IsNullOrEmpty(acct.Password))
+                {
+                    string supplied = accountToken == null ? string.Empty : accountToken.Trim();
+                    if (!string.Equals(supplied, acct.Password, StringComparison.Ordinal))
+                    {
+                        _licenseStatus = LicenseStatus.Denied;
+                        _licenseMessage = string.Format("✖ 账号「{0}」密码不正确", accountName);
+                        return;
+                    }
+                }
                 if (acct.Allowed)
                 {
                     _licenseStatus = LicenseStatus.Allowed;

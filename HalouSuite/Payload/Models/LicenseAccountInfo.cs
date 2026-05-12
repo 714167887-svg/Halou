@@ -32,6 +32,8 @@ namespace HalouSuite.Payload
         public string ExpiresAt { get; set; }
         // 功能白名单：null 或包含 "*" 表示不限制；否则只允许列出的功能 Id（大小写不敏感）
         public List<string> Features { get; set; }
+        // 密码：若非空，则用户在 UI "Token" 框输入的值必须完全匹配；为空表示无密码（向后兼容）
+        public string Password { get; set; }
     }
 
 }

@@ -103,7 +103,8 @@ namespace HalouSuite.Payload
                         Reason = GetString(sub, "reason"),
                         Note = GetString(sub, "note"),
                         ExpiresAt = GetString(sub, "expires_at"),
-                        Features = GetStringList(sub, "features")
+                        Features = GetStringList(sub, "features"),
+                        Password = GetString(sub, "password")
                     };
                 }
             }
