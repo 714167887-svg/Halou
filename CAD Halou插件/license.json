@@ -23,6 +23,11 @@
       "allowed": true,
       "features": ["ole"],
       "note": "Demo 账号：仅 OLE 批量导入图片"
+    },
+    "MX123": {
+      "allowed": true,
+      "features": ["zk", "kb", "jt", "ole"],
+      "note": "密码 123456（备忘，系统当前按账号名校验，未实现独立密码字段）"
     }
   }
 }
