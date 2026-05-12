@@ -37,7 +37,8 @@ namespace HalouSuite.Payload
         // ===== 通用常量 =====
         private const string PaletteTitle = "Halou 插件集合";
         private const string StatusPrefix = "Halou Suite";
-        private const int MinimumRefreshSeconds = 60;
+        // v2.0.17：刷新最小间隔从 60s 提到 300s（5 分钟），避免每分钟一次同步网络阻塞 UI
+        private const int MinimumRefreshSeconds = 300;
         // Phase 2 起，CurrentVersion 与 PayloadEntry.PayloadVersion 同步
         // （1.1.68 是 Phase 2 拆分前 OLD host 末版本号，保留为历史参考）
         public const string CurrentVersion = PayloadEntry.PayloadVersion;
@@ -184,7 +185,34 @@ namespace HalouSuite.Payload
                 _configuration.Hotkey));
 
             ResumePendingUpdateWatcher();
-            TryCheckLicense(silent: true);
+            // v2.0.17：授权校验是同步网络（最坏 30s+），扔到后台线程，避免阻塞 acad 启动
+            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try { TryCheckLicense(silent: true); } catch { }
+                MarshalToUi(() =>
+                {
+                    try { UpdatePaletteView(); } catch { }
+                });
+            });
+        }
+
+        // 把回调 marshal 回 palette 所在的主线程（acad UI 线程）。
+        // 如果 palette 还没建好，就丢弃这次刷新（下次 timer 会再来）。
+        private void MarshalToUi(Action action)
+        {
+            if (action == null) return;
+            try
+            {
+                var ctrl = _paletteControl;
+                if (ctrl != null && ctrl.IsHandleCreated && !ctrl.IsDisposed)
+                {
+                    ctrl.BeginInvoke((System.Windows.Forms.MethodInvoker)delegate
+                    {
+                        try { action(); } catch { }
+                    });
+                }
+            }
+            catch { }
         }
 
         // 上次守护进程若被中断（电脑重启/任务被杀），重新启动守护等待本次 CAD 会话结束后 swap

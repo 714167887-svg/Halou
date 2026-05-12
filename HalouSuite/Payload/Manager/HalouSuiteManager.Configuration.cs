@@ -125,9 +125,34 @@ namespace HalouSuite.Payload
             _refreshTimer.Start();
         }
 
+        // v2.0.17：原实现在 UI 线程上同步跑 RefreshManifest（含网络下载、最坏 5-30s），
+        // 直接卡死 acad 主线程。现改为后台线程跑网络，完成后 BeginInvoke 回 UI 做轻量刷新。
+        private int _refreshInFlight; // 0 = idle, 1 = running
         private void OnRefreshTimerTick(object sender, EventArgs e)
         {
-            RefreshManifest(manual: false);
+            if (System.Threading.Interlocked.CompareExchange(ref _refreshInFlight, 1, 0) == 1) return;
+            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    try { TrySyncManifestFromCdn(); } catch { }
+                    try { TryCheckLicense(silent: true); } catch { }
+                }
+                finally
+                {
+                    MarshalToUi(() =>
+                    {
+                        try
+                        {
+                            _manifest = PluginManifest.Load(_configuration, _localManifestPath, _manifestCachePath, out _statusMessage);
+                            ApplyCommandAliases();
+                            UpdatePaletteView();
+                        }
+                        catch { }
+                    });
+                    System.Threading.Interlocked.Exchange(ref _refreshInFlight, 0);
+                }
+            });
         }
 
         // ===== 功能查找与分发执行 =====
