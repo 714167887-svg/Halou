@@ -444,11 +444,60 @@ namespace HalouSuite.Payload
 
         private static Icon BuildSuiteIcon()
         {
-            Bitmap bitmap = new Bitmap(16, 16);
-            using (Graphics graphics = Graphics.FromImage(bitmap))
+            // v2.0.18+：用 GDI+ 矢量风格绘制 + multi-size ICO（16/24/32/48/64），高 DPI 下也清晰。
+            int[] sizes = new[] { 16, 24, 32, 48, 64 };
+            List<byte[]> pngs = new List<byte[]>(sizes.Length);
+            foreach (int s in sizes)
             {
-                graphics.Clear(DrawingColor.Transparent);
+                using (Bitmap bmp = RenderSuiteCatBitmap(s))
+                using (MemoryStream pngMs = new MemoryStream())
+                {
+                    bmp.Save(pngMs, System.Drawing.Imaging.ImageFormat.Png);
+                    pngs.Add(pngMs.ToArray());
+                }
+            }
 
+            using (MemoryStream ms = new MemoryStream())
+            using (BinaryWriter bw = new BinaryWriter(ms))
+            {
+                // ICONDIR
+                bw.Write((short)0);              // Reserved
+                bw.Write((short)1);              // Type = icon
+                bw.Write((short)sizes.Length);   // Count
+
+                int offset = 6 + 16 * sizes.Length;
+                for (int i = 0; i < sizes.Length; i++)
+                {
+                    int s = sizes[i];
+                    bw.Write((byte)(s >= 256 ? 0 : s)); // width
+                    bw.Write((byte)(s >= 256 ? 0 : s)); // height
+                    bw.Write((byte)0);                  // colorCount
+                    bw.Write((byte)0);                  // reserved
+                    bw.Write((short)1);                 // planes
+                    bw.Write((short)32);                // bitCount
+                    bw.Write((int)pngs[i].Length);      // size
+                    bw.Write((int)offset);              // offset
+                    offset += pngs[i].Length;
+                }
+                foreach (byte[] p in pngs) bw.Write(p);
+                bw.Flush();
+                ms.Position = 0;
+                // 必须 new MemoryStream(copy) 否则 Icon ctor 持有引用 + 我们 dispose 会失效；
+                // 但 new Icon(Stream) 文档说会读完即释放依赖，安全；如出问题改为 byte[] -> 新 stream。
+                return new Icon(ms);
+            }
+        }
+
+        private static Bitmap RenderSuiteCatBitmap(int size)
+        {
+            Bitmap bmp = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.Clear(DrawingColor.Transparent);
+
+                float s = size / 32f;
                 DrawingColor outline = DrawingColor.FromArgb(62, 45, 39);
                 DrawingColor fur = DrawingColor.FromArgb(238, 197, 133);
                 DrawingColor innerEar = DrawingColor.FromArgb(244, 160, 176);
@@ -456,69 +505,82 @@ namespace HalouSuite.Payload
                 DrawingColor nose = DrawingColor.FromArgb(230, 120, 140);
                 DrawingColor cheek = DrawingColor.FromArgb(255, 220, 190);
 
-                string[] cat =
+                // 左右耳（先画耳朵，让头部覆盖耳根，更自然）
+                PointF[] leftEar = { new PointF(4 * s, 13 * s), new PointF(8 * s, 2 * s), new PointF(13 * s, 11 * s) };
+                PointF[] rightEar = { new PointF(28 * s, 13 * s), new PointF(24 * s, 2 * s), new PointF(19 * s, 11 * s) };
+                using (SolidBrush b = new SolidBrush(outline))
                 {
-                    "...oo....oo.....",
-                    "..oiio..oiio....",
-                    "..offooooffo....",
-                    ".offfffffffoo...",
-                    ".offfffffffoo...",
-                    "offfffffffffo...",
-                    "offfeffeffffo...",
-                    "offfffffffffo...",
-                    "offfcfncfffo....",
-                    "offfffffffmfo....",
-                    "offfccffccfo....",
-                    ".offfffffffo....",
-                    ".oooffffffoo....",
-                    "...oooooooo.....",
-                    "................",
-                    "................"
-                };
+                    g.FillPolygon(b, leftEar);
+                    g.FillPolygon(b, rightEar);
+                }
+                PointF[] leftEarInner = { new PointF(6.6f * s, 11.5f * s), new PointF(8.6f * s, 5.5f * s), new PointF(11.2f * s, 10.5f * s) };
+                PointF[] rightEarInner = { new PointF(25.4f * s, 11.5f * s), new PointF(23.4f * s, 5.5f * s), new PointF(20.8f * s, 10.5f * s) };
+                using (SolidBrush b = new SolidBrush(innerEar))
+                {
+                    g.FillPolygon(b, leftEarInner);
+                    g.FillPolygon(b, rightEarInner);
+                }
 
-                for (int y = 0; y < cat.Length; y++)
+                // 头部椭圆
+                using (SolidBrush b = new SolidBrush(fur))
                 {
-                    string row = cat[y];
-                    for (int x = 0; x < row.Length; x++)
+                    g.FillEllipse(b, 3 * s, 8 * s, 26 * s, 22 * s);
+                }
+                using (Pen pen = new Pen(outline, Math.Max(1f, 1.3f * s)))
+                {
+                    g.DrawEllipse(pen, 3 * s, 8 * s, 26 * s, 22 * s);
+                }
+
+                // 脸颊
+                using (SolidBrush b = new SolidBrush(cheek))
+                {
+                    g.FillEllipse(b, 5.5f * s, 21.5f * s, 5.5f * s, 3.6f * s);
+                    g.FillEllipse(b, 21 * s, 21.5f * s, 5.5f * s, 3.6f * s);
+                }
+
+                // 眼睛
+                using (SolidBrush b = new SolidBrush(eye))
+                {
+                    g.FillEllipse(b, 9 * s, 16 * s, 3.6f * s, 4.6f * s);
+                    g.FillEllipse(b, 19.4f * s, 16 * s, 3.6f * s, 4.6f * s);
+                }
+                using (SolidBrush b = new SolidBrush(DrawingColor.White))
+                {
+                    g.FillEllipse(b, 9.7f * s, 16.5f * s, 1.3f * s, 1.3f * s);
+                    g.FillEllipse(b, 20.1f * s, 16.5f * s, 1.3f * s, 1.3f * s);
+                }
+
+                // 鼻子（倒三角，圆角效果靠抗锯齿 + 小尺寸即可）
+                PointF[] noseTri = { new PointF(14.4f * s, 21 * s), new PointF(17.6f * s, 21 * s), new PointF(16 * s, 23 * s) };
+                using (SolidBrush b = new SolidBrush(nose))
+                {
+                    g.FillPolygon(b, noseTri);
+                }
+
+                // 嘴：两段小弧
+                using (Pen pen = new Pen(outline, Math.Max(1f, 1.1f * s)))
+                {
+                    pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+                    pen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+                    g.DrawArc(pen, 13 * s, 22.5f * s, 3 * s, 3 * s, 20, 140);
+                    g.DrawArc(pen, 16 * s, 22.5f * s, 3 * s, 3 * s, 20, 140);
+                }
+
+                // 胡须（仅在 size >= 24 时画，避免 16px 太挤）
+                if (size >= 24)
+                {
+                    using (Pen pen = new Pen(outline, Math.Max(0.8f, 0.7f * s)))
                     {
-                        DrawingColor color;
-                        switch (row[x])
-                        {
-                            case 'o':
-                                color = outline;
-                                break;
-                            case 'f':
-                                color = fur;
-                                break;
-                            case 'i':
-                                color = innerEar;
-                                break;
-                            case 'e':
-                                color = eye;
-                                break;
-                            case 'n':
-                                color = nose;
-                                break;
-                            case 'm':
-                                color = outline;
-                                break;
-                            case 'c':
-                                color = cheek;
-                                break;
-                            default:
-                                continue;
-                        }
-
-                        using (Brush brush = new SolidBrush(color))
-                        {
-                            graphics.FillRectangle(brush, x, y, 1, 1);
-                        }
+                        pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+                        pen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+                        g.DrawLine(pen, 2 * s, 22 * s, 7 * s, 22.6f * s);
+                        g.DrawLine(pen, 2 * s, 24 * s, 7 * s, 24 * s);
+                        g.DrawLine(pen, 25 * s, 22.6f * s, 30 * s, 22 * s);
+                        g.DrawLine(pen, 25 * s, 24 * s, 30 * s, 24 * s);
                     }
                 }
             }
-
-            Icon icon = Icon.FromHandle(bitmap.GetHicon());
-            return icon;
+            return bmp;
         }
     }
 }
