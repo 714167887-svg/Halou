@@ -485,14 +485,17 @@
             cp (- (* v1x v2y) (* v1y v2x)))
       (> (* sa cp) 0.0001)) nil))
 
-;;; v1.4.0 新增：判定截面"首末段重合平行 + 间隙 < 1mm"
+;;; v1.4.1 修订：判定截面"首末段邻接平行 + 间隙 < 1mm"
 ;;; pts 为外壁点序（长度 = sc+1，首点 pts[0]，末点 pts[sc]）
-;;; 条件：
-;;;   a) 首点 pts[0] 与 末点 pts[sc] 距离 < 1.0 mm
-;;;   b) 首段方向 (pts[0]→pts[1]) 与 末段方向 (pts[sc-1]→pts[sc]) 近似平行
-;;;      |cross| / (|v1|*|v2|) < 0.05 (≈ 2.9°)
+;;; 兼容两种几何拓扑：
+;;;   A) 闭合截面 / 首末点重合：d(pts[0], pts[sc]) < 1mm
+;;;      （例：方管、首末点同位）
+;;;   B) 开口对接（Z 型 / C 型外壁互向）：d(pts[1], pts[sc-1]) < 1mm
+;;;      （例：本图 Z 型 —— 顶部两段 13.9 的内端点相隔 0.2mm）
+;;; 任一拓扑满足后，再校验首段 (pts[0]→pts[1]) 与末段 (pts[sc-1]→pts[sc])
+;;; 方向近似平行：|cross| / (|v1|*|v2|) < 0.05 (≈ 2.9°)
 ;;; 返回 T / nil
-(defun zkk:closed-parallel-p (pts / n p0 pe p1 pm d v1x v1y v2x v2y l1 l2 cross ok)
+(defun zkk:closed-parallel-p (pts / n p0 pe p1 pm dA dB v1x v1y v2x v2y l1 l2 cross ok)
   (setq ok nil n (length pts))
   (if (>= n 3)
     (progn
@@ -503,9 +506,11 @@
       (if (and (zkk:pt2d-p p0) (zkk:pt2d-p pe)
                (zkk:pt2d-p p1) (zkk:pt2d-p pm))
         (progn
-          (setq d (distance (list (car p0) (cadr p0))
-                            (list (car pe) (cadr pe))))
-          (if (< d 1.0)
+          (setq dA (distance (list (car p0) (cadr p0))
+                             (list (car pe) (cadr pe)))
+                dB (distance (list (car p1) (cadr p1))
+                             (list (car pm) (cadr pm))))
+          (if (or (< dA 1.0) (< dB 1.0))
             (progn
               (setq v1x (- (car p1) (car p0)) v1y (- (cadr p1) (cadr p0))
                     v2x (- (car pe) (car pm)) v2y (- (cadr pe) (cadr pm))
