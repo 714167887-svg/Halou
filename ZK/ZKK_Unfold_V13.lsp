@@ -499,31 +499,77 @@
                (if (> ca 1.0) (setq ca 1.0)) (if (< ca -1.0) (setq ca -1.0))
                (- 180.0 (* (zkk:acos ca) (/ 180.0 pi)))) nil)) nil))
 
+;;; v1.4.0: 判断截面首末段是否"重合/对接平行"（间隙<1mm 且首末段近似平行）
+;;; 两种拓扑均判 T：
+;;;   A) 闭合截面：pts[0] ≈ pts[n-1]      （首末点重合）
+;;;   B) 开口对接：pts[1] ≈ pts[n-2]      （首末段的"内端点"对接，如 Z 型顶部）
+;;; 平行性：|cross(v1,v2)| / (|v1|*|v2|) < 0.05  (≈ 2.9°)
+(defun zkk:closed-parallel-p (pts / n p0 pe p1 pm dA dB v1x v1y v2x v2y l1 l2 cross ok)
+  (setq ok nil n (length pts))
+  (if (>= n 3)
+    (progn
+      (setq p0 (nth 0 pts) pe (nth (1- n) pts)
+            p1 (nth 1 pts) pm (nth (- n 2) pts))
+      (if (and (zkk:pt2d-p p0) (zkk:pt2d-p pe)
+               (zkk:pt2d-p p1) (zkk:pt2d-p pm))
+        (progn
+          (setq dA (distance (list (car p0) (cadr p0)) (list (car pe) (cadr pe)))
+                dB (distance (list (car p1) (cadr p1)) (list (car pm) (cadr pm))))
+          (if (or (< dA 1.0) (< dB 1.0))
+            (progn
+              (setq v1x (- (car p1) (car p0)) v1y (- (cadr p1) (cadr p0))
+                    v2x (- (car pe) (car pm)) v2y (- (cadr pe) (cadr pm))
+                    l1 (sqrt (+ (* v1x v1x) (* v1y v1y)))
+                    l2 (sqrt (+ (* v2x v2x) (* v2y v2y))))
+              (if (and (> l1 1e-6) (> l2 1e-6))
+                (progn (setq cross (abs (- (* v1x v2y) (* v1y v2x))))
+                       (if (< cross (* 0.05 l1 l2)) (setq ok T))))))))))
+  ok)
+
 ;;; 对每个展开段进行扣槽补偿
 ;;; 输入: pts=外壁点序, segs=原始段长, cfg=配置
 ;;; 返回: 扣减/补加后的段长列表（可能比 segs 多，因为锐角会插入额外段）
+;;;
+;;; v1.4.0：当 zkk:closed-parallel-p 为 T 时，头段(i=0)和尾段(i=sc-1)
+;;;          也按"接折弯一端"扣减一次 single（= slot-width/2）：
+;;;            头段凸凹判断: (pts[0], pts[1], pts[2])
+;;;            尾段凸凹判断: (pts[sc-2], pts[sc-1], pts[sc])
+;;;          条件不满足时维持原逻辑（首末段不扣）。
 (defun zkk:slot-deduct (pts segs cfg /
-  sv single iv sa sc i sl av bs fs pp pc pn ba)
+  sv single iv sa sc i sl av bs fs pp pc pn ba closed skip-end)
   (setq sv (zkk:cg cfg 'slot-width))
   (if (or (null sv) (<= sv 0.0)) segs
     (progn
-      (setq single (/ sv 2.0) iv sv sa (zkk:sarea pts) sc (length segs) bs nil i 0)
+      (setq single (/ sv 2.0) iv sv sa (zkk:sarea pts) sc (length segs) bs nil i 0
+            closed (zkk:closed-parallel-p pts))
+      (princ (strcat "\n[DBG] closed-parallel-p=" (if closed "T" "nil")))
       (while (< i sc)
         (setq sl (nth i segs))
+        (setq skip-end (and (not closed) (or (= i 0) (= i (1- sc)))))
         ;; v1.1.70: 弧形面不需要扣槽補偿（bulge≠0 表示当前段为圆弧）
-        (if (or (not (numberp sl)) (= i 0) (= i (1- sc))
+        (if (or (not (numberp sl)) skip-end
                 (and (caddr (nth i pts))
                      (numberp (caddr (nth i pts)))
                      (> (abs (caddr (nth i pts))) 1e-6)))
           (setq bs (append bs (list sl)))
           (progn
-            (setq av 0.0
-                  pp (nth (1- i) pts) pc (nth i pts) pn (nth (1+ i) pts))
-            (if (zkk:convex-p sa pp pc pn)
-              (setq av (- av single)) (setq av (+ av single)))
-            (setq pp (nth i pts) pc (nth (1+ i) pts) pn (nth (+ i 2) pts))
-            (if (zkk:convex-p sa pp pc pn)
-              (setq av (- av single)) (setq av (+ av single)))
+            (setq av 0.0)
+            (cond
+              ((= i 0)
+               (setq pp (nth i pts) pc (nth (1+ i) pts) pn (nth (+ i 2) pts))
+               (if (zkk:convex-p sa pp pc pn)
+                 (setq av (- av single)) (setq av (+ av single))))
+              ((= i (1- sc))
+               (setq pp (nth (1- i) pts) pc (nth i pts) pn (nth (1+ i) pts))
+               (if (zkk:convex-p sa pp pc pn)
+                 (setq av (- av single)) (setq av (+ av single))))
+              (T
+               (setq pp (nth (1- i) pts) pc (nth i pts) pn (nth (1+ i) pts))
+               (if (zkk:convex-p sa pp pc pn)
+                 (setq av (- av single)) (setq av (+ av single)))
+               (setq pp (nth i pts) pc (nth (1+ i) pts) pn (nth (+ i 2) pts))
+               (if (zkk:convex-p sa pp pc pn)
+                 (setq av (- av single)) (setq av (+ av single)))))
             (setq sl (+ sl av)) (if (< sl 0.0) (setq sl 0.0))
             (setq bs (append bs (list sl)))))
         (setq i (1+ i)))
