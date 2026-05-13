@@ -17,7 +17,7 @@ namespace HalouSuite.Payload
     /// </summary>
     public sealed class PayloadEntry : IPayload
     {
-        public const string PayloadVersion = "2.0.28";
+        public const string PayloadVersion = "2.0.29";
         private IHostServices _host;
         // 让 HalouSuiteManager 能在构造期间拿到 host（用于定位资源目录 PayloadDirectory），
         // 因为 host 通过 Assembly.Load(byte[]) 加载本 dll，导致 Assembly.Location 为空，
