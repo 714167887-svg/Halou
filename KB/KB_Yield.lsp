@@ -242,24 +242,54 @@
                (if (> ca 1.0) (setq ca 1.0)) (if (< ca -1.0) (setq ca -1.0))
                (- 180.0 (* (kb:acos ca) (/ 180.0 pi)))) nil)) nil))
 
+;;; v1.4.1: 判断首末段是否"邻接"（任一对端点距离 ≤ 2mm 即视为闭合截面）
+;;;   A) pts[0] ? pts[n-1]   （首末顶点对接）
+;;;   B) pts[1] ? pts[n-2]   （首末段内端点对接，如 Z 型顶部）
+(defun kb:closed-parallel-p (pts / n p0 pe p1 pm dA dB ok)
+  (setq ok nil n (length pts))
+  (if (>= n 3)
+    (progn
+      (setq p0 (nth 0 pts) pe (nth (1- n) pts)
+            p1 (nth 1 pts) pm (nth (- n 2) pts))
+      (if (and (kb:pt2d-p p0) (kb:pt2d-p pe)
+               (kb:pt2d-p p1) (kb:pt2d-p pm))
+        (progn
+          (setq dA (distance (list (car p0) (cadr p0)) (list (car pe) (cadr pe)))
+                dB (distance (list (car p1) (cadr p1)) (list (car pm) (cadr pm))))
+          (if (or (<= dA 2.0) (<= dB 2.0)) (setq ok T))))))
+  ok)
+
 ;;; 对外壁每个内部段两端做扣减/补加；锐角凸角处插入 slot-width
+;;; v1.4.1：闭合截面（kb:closed-parallel-p = T）时，头段(i=0)和尾段(i=sc-1)也按一端折弯扣 single
 (defun kb:slot-deduct (pts segs sv /
-  single iv sa sc i sl av bs fs pp pc pn ba)
+  single iv sa sc i sl av bs fs pp pc pn ba closed skip-end)
   (if (or (null sv) (<= sv 0.0)) segs
     (progn
-      (setq single (/ sv 2.0) iv sv sa (kb:sarea pts) sc (length segs) bs nil i 0)
+      (setq single (/ sv 2.0) iv sv sa (kb:sarea pts) sc (length segs) bs nil i 0
+            closed (kb:closed-parallel-p pts))
       (while (< i sc)
         (setq sl (nth i segs))
-        (if (or (not (numberp sl)) (= i 0) (= i (1- sc)))
+        (setq skip-end (and (not closed) (or (= i 0) (= i (1- sc)))))
+        (if (or (not (numberp sl)) skip-end)
           (setq bs (append bs (list sl)))
           (progn
-            (setq av 0.0
-                  pp (nth (1- i) pts) pc (nth i pts) pn (nth (1+ i) pts))
-            (if (kb:convex-p sa pp pc pn)
-              (setq av (- av single)) (setq av (+ av single)))
-            (setq pp (nth i pts) pc (nth (1+ i) pts) pn (nth (+ i 2) pts))
-            (if (kb:convex-p sa pp pc pn)
-              (setq av (- av single)) (setq av (+ av single)))
+            (setq av 0.0)
+            (cond
+              ((= i 0)
+               (setq pp (nth i pts) pc (nth (1+ i) pts) pn (nth (+ i 2) pts))
+               (if (kb:convex-p sa pp pc pn)
+                 (setq av (- av single)) (setq av (+ av single))))
+              ((= i (1- sc))
+               (setq pp (nth (1- i) pts) pc (nth i pts) pn (nth (1+ i) pts))
+               (if (kb:convex-p sa pp pc pn)
+                 (setq av (- av single)) (setq av (+ av single))))
+              (T
+               (setq pp (nth (1- i) pts) pc (nth i pts) pn (nth (1+ i) pts))
+               (if (kb:convex-p sa pp pc pn)
+                 (setq av (- av single)) (setq av (+ av single)))
+               (setq pp (nth i pts) pc (nth (1+ i) pts) pn (nth (+ i 2) pts))
+               (if (kb:convex-p sa pp pc pn)
+                 (setq av (- av single)) (setq av (+ av single)))))
             (setq sl (+ sl av)) (if (< sl 0.0) (setq sl 0.0))
             (setq bs (append bs (list sl)))))
         (setq i (1+ i)))
