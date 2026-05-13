@@ -499,12 +499,11 @@
                (if (> ca 1.0) (setq ca 1.0)) (if (< ca -1.0) (setq ca -1.0))
                (- 180.0 (* (zkk:acos ca) (/ 180.0 pi)))) nil)) nil))
 
-;;; v1.4.0: 判断截面首末段是否"重合/对接平行"（间隙<1mm 且首末段近似平行）
-;;; 两种拓扑均判 T：
-;;;   A) 闭合截面：pts[0] ≈ pts[n-1]      （首末点重合）
-;;;   B) 开口对接：pts[1] ≈ pts[n-2]      （首末段的"内端点"对接，如 Z 型顶部）
-;;; 平行性：|cross(v1,v2)| / (|v1|*|v2|) < 0.05  (≈ 2.9°)
-(defun zkk:closed-parallel-p (pts / n p0 pe p1 pm dA dB v1x v1y v2x v2y l1 l2 cross ok)
+;;; v1.4.1: 判定首末两端是否"邻接"（取消平行性要求）
+;;; 任一端点对距离 <= 2mm 即视为闭合截面，首末段都按折弯扣减：
+;;;   A) pts[0] ? pts[n-1]   （首末顶点对接，传统闭合截面）
+;;;   B) pts[1] ? pts[n-2]   （首末段内端点对接，如 Z 型顶部）
+(defun zkk:closed-parallel-p (pts / n p0 pe p1 pm dA dB ok)
   (setq ok nil n (length pts))
   (if (>= n 3)
     (progn
@@ -515,15 +514,7 @@
         (progn
           (setq dA (distance (list (car p0) (cadr p0)) (list (car pe) (cadr pe)))
                 dB (distance (list (car p1) (cadr p1)) (list (car pm) (cadr pm))))
-          (if (or (< dA 1.0) (< dB 1.0))
-            (progn
-              (setq v1x (- (car p1) (car p0)) v1y (- (cadr p1) (cadr p0))
-                    v2x (- (car pe) (car pm)) v2y (- (cadr pe) (cadr pm))
-                    l1 (sqrt (+ (* v1x v1x) (* v1y v1y)))
-                    l2 (sqrt (+ (* v2x v2x) (* v2y v2y))))
-              (if (and (> l1 1e-6) (> l2 1e-6))
-                (progn (setq cross (abs (- (* v1x v2y) (* v1y v2x))))
-                       (if (< cross (* 0.05 l1 l2)) (setq ok T))))))))))
+          (if (or (<= dA 2.0) (<= dB 2.0)) (setq ok T))))))
   ok)
 
 ;;; 对每个展开段进行扣槽补偿

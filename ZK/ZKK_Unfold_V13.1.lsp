@@ -495,31 +495,18 @@
 ;;; 任一拓扑满足后，再校验首段 (pts[0]→pts[1]) 与末段 (pts[sc-1]→pts[sc])
 ;;; 方向近似平行：|cross| / (|v1|*|v2|) < 0.05 (≈ 2.9°)
 ;;; 返回 T / nil
-(defun zkk:closed-parallel-p (pts / n p0 pe p1 pm dA dB v1x v1y v2x v2y l1 l2 cross ok)
+(defun zkk:closed-parallel-p (pts / n p0 pe p1 pm dA dB ok)
   (setq ok nil n (length pts))
   (if (>= n 3)
     (progn
-      (setq p0 (nth 0 pts)
-            pe (nth (1- n) pts)
-            p1 (nth 1 pts)
-            pm (nth (- n 2) pts))
+      (setq p0 (nth 0 pts) pe (nth (1- n) pts)
+            p1 (nth 1 pts) pm (nth (- n 2) pts))
       (if (and (zkk:pt2d-p p0) (zkk:pt2d-p pe)
                (zkk:pt2d-p p1) (zkk:pt2d-p pm))
         (progn
-          (setq dA (distance (list (car p0) (cadr p0))
-                             (list (car pe) (cadr pe)))
-                dB (distance (list (car p1) (cadr p1))
-                             (list (car pm) (cadr pm))))
-          (if (or (< dA 1.0) (< dB 1.0))
-            (progn
-              (setq v1x (- (car p1) (car p0)) v1y (- (cadr p1) (cadr p0))
-                    v2x (- (car pe) (car pm)) v2y (- (cadr pe) (cadr pm))
-                    l1 (sqrt (+ (* v1x v1x) (* v1y v1y)))
-                    l2 (sqrt (+ (* v2x v2x) (* v2y v2y))))
-              (if (and (> l1 1e-6) (> l2 1e-6))
-                (progn
-                  (setq cross (abs (- (* v1x v2y) (* v1y v2x))))
-                  (if (< cross (* 0.05 l1 l2)) (setq ok T))))))))))
+          (setq dA (distance (list (car p0) (cadr p0)) (list (car pe) (cadr pe)))
+                dB (distance (list (car p1) (cadr p1)) (list (car pm) (cadr pm))))
+          (if (or (<= dA 2.0) (<= dB 2.0)) (setq ok T))))))
   ok)
 
 ;;; 计算角 pp→pc→pn 的折弯角度（度，0°=石线, 90°=直角）
