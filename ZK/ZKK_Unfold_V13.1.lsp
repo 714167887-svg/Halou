@@ -476,7 +476,7 @@
 ;; 锐角 (<70°) 的凸角处额外插入一个槽宽段
 
 ;;; 判断角 pp→pc→pn 是否为凸角
-;;; sa = 多边形有符号面积，用于确定“外侧”方向
+;;; sa = 多边形有符号面积，用于确定"外侧"方向
 (defun zkk:convex-p (sa pp pc pn / v1x v1y v2x v2y cp)
   (if (and (zkk:pt2d-p pp) (zkk:pt2d-p pc) (zkk:pt2d-p pn))
     (progn
@@ -484,6 +484,38 @@
             v2x (- (car pn) (car pc)) v2y (- (cadr pn) (cadr pc))
             cp (- (* v1x v2y) (* v1y v2x)))
       (> (* sa cp) 0.0001)) nil))
+
+;;; v1.4.0 新增：判定截面"首末段重合平行 + 间隙 < 1mm"
+;;; pts 为外壁点序（长度 = sc+1，首点 pts[0]，末点 pts[sc]）
+;;; 条件：
+;;;   a) 首点 pts[0] 与 末点 pts[sc] 距离 < 1.0 mm
+;;;   b) 首段方向 (pts[0]→pts[1]) 与 末段方向 (pts[sc-1]→pts[sc]) 近似平行
+;;;      |cross| / (|v1|*|v2|) < 0.05 (≈ 2.9°)
+;;; 返回 T / nil
+(defun zkk:closed-parallel-p (pts / n p0 pe p1 pm d v1x v1y v2x v2y l1 l2 cross ok)
+  (setq ok nil n (length pts))
+  (if (>= n 3)
+    (progn
+      (setq p0 (nth 0 pts)
+            pe (nth (1- n) pts)
+            p1 (nth 1 pts)
+            pm (nth (- n 2) pts))
+      (if (and (zkk:pt2d-p p0) (zkk:pt2d-p pe)
+               (zkk:pt2d-p p1) (zkk:pt2d-p pm))
+        (progn
+          (setq d (distance (list (car p0) (cadr p0))
+                            (list (car pe) (cadr pe))))
+          (if (< d 1.0)
+            (progn
+              (setq v1x (- (car p1) (car p0)) v1y (- (cadr p1) (cadr p0))
+                    v2x (- (car pe) (car pm)) v2y (- (cadr pe) (cadr pm))
+                    l1 (sqrt (+ (* v1x v1x) (* v1y v1y)))
+                    l2 (sqrt (+ (* v2x v2x) (* v2y v2y))))
+              (if (and (> l1 1e-6) (> l2 1e-6))
+                (progn
+                  (setq cross (abs (- (* v1x v2y) (* v1y v2x))))
+                  (if (< cross (* 0.05 l1 l2)) (setq ok T))))))))))
+  ok)
 
 ;;; 计算角 pp→pc→pn 的折弯角度（度，0°=石线, 90°=直角）
 (defun zkk:bangle (pp pc pn / v1x v1y v2x v2y dp m1 m2 ca)
@@ -502,28 +534,51 @@
 ;;; 对每个展开段进行扣槽补偿
 ;;; 输入: pts=外壁点序, segs=原始段长, cfg=配置
 ;;; 返回: 扣减/补加后的段长列表（可能比 segs 多，因为锐角会插入额外段）
+;;;
+;;; v1.4.0：当截面首末段"重合平行且间隙<1mm"（zkk:closed-parallel-p 为 T）时，
+;;;          头段(i=0)和尾段(i=sc-1)按"接折弯一端"扣减一次 single（= slot-width/2），
+;;;          凸凹判断分别用：
+;;;            头段: (pts[0], pts[1], pts[2])
+;;;            尾段: (pts[sc-2], pts[sc-1], pts[sc])
+;;;          条件不满足时维持原逻辑（首末段不扣）。
 (defun zkk:slot-deduct (pts segs cfg /
-  sv single iv sa sc i sl av bs fs pp pc pn ba)
+  sv single iv sa sc i sl av bs fs pp pc pn ba closed skip-end)
   (setq sv (zkk:cg cfg 'slot-width))
   (if (or (null sv) (<= sv 0.0)) segs
     (progn
-      (setq single (/ sv 2.0) iv sv sa (zkk:sarea pts) sc (length segs) bs nil i 0)
+      (setq single (/ sv 2.0) iv sv sa (zkk:sarea pts) sc (length segs) bs nil i 0
+            closed (zkk:closed-parallel-p pts))
+      (princ (strcat "\n[DBG] closed-parallel-p=" (if closed "T" "nil")))
       (while (< i sc)
         (setq sl (nth i segs))
-        ;; v1.1.70: 弧形面不需要扣槽補偿（bulge≠0 表示当前段为圆弧）
-        (if (or (not (numberp sl)) (= i 0) (= i (1- sc))
+        ;; 跳过条件：非数字 / 圆弧段 / (非闭合时的首末段)
+        (setq skip-end (and (not closed) (or (= i 0) (= i (1- sc)))))
+        (if (or (not (numberp sl)) skip-end
                 (and (caddr (nth i pts))
                      (numberp (caddr (nth i pts)))
                      (> (abs (caddr (nth i pts))) 1e-6)))
           (setq bs (append bs (list sl)))
           (progn
-            (setq av 0.0
-                  pp (nth (1- i) pts) pc (nth i pts) pn (nth (1+ i) pts))
-            (if (zkk:convex-p sa pp pc pn)
-              (setq av (- av single)) (setq av (+ av single)))
-            (setq pp (nth i pts) pc (nth (1+ i) pts) pn (nth (+ i 2) pts))
-            (if (zkk:convex-p sa pp pc pn)
-              (setq av (- av single)) (setq av (+ av single)))
+            (setq av 0.0)
+            (cond
+              ;; 头段：闭合截面下只看 pts[0]->pts[1]->pts[2] 一端
+              ((= i 0)
+               (setq pp (nth i pts) pc (nth (1+ i) pts) pn (nth (+ i 2) pts))
+               (if (zkk:convex-p sa pp pc pn)
+                 (setq av (- av single)) (setq av (+ av single))))
+              ;; 尾段：闭合截面下只看 pts[sc-2]->pts[sc-1]->pts[sc] 一端
+              ((= i (1- sc))
+               (setq pp (nth (1- i) pts) pc (nth i pts) pn (nth (1+ i) pts))
+               (if (zkk:convex-p sa pp pc pn)
+                 (setq av (- av single)) (setq av (+ av single))))
+              ;; 中间段：两端各扣一次 single
+              (T
+               (setq pp (nth (1- i) pts) pc (nth i pts) pn (nth (1+ i) pts))
+               (if (zkk:convex-p sa pp pc pn)
+                 (setq av (- av single)) (setq av (+ av single)))
+               (setq pp (nth i pts) pc (nth (1+ i) pts) pn (nth (+ i 2) pts))
+               (if (zkk:convex-p sa pp pc pn)
+                 (setq av (- av single)) (setq av (+ av single)))))
             (setq sl (+ sl av)) (if (< sl 0.0) (setq sl 0.0))
             (setq bs (append bs (list sl)))))
         (setq i (1+ i)))
