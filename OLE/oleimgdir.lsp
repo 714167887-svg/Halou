@@ -14,7 +14,6 @@
     (T nil)
   )
 )
-(setq *oleimg-helper-fallback* "e:\\111\\oleimgdir-clipboard.ps1")
 
 (defun oleimg:message (text)
   (princ (strcat "\n[OLEIMGDIR] " text))
@@ -60,7 +59,6 @@
   (cond
     ((and local-path (findfile local-path)) local-path)
     ((and drawing-path (findfile drawing-path)) drawing-path)
-    ((and *oleimg-helper-fallback* (findfile *oleimg-helper-fallback*)) *oleimg-helper-fallback*)
     ((and temp-path (findfile temp-path)) temp-path)
     (T nil)
   )
