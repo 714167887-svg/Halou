@@ -65,6 +65,15 @@ $xml = @"
 $searchXml
   <Module file="$(XmlEscape $InputDll)">
     <SkipType name="HalouSuite.Payload.PayloadEntry" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" />
+        <SkipType name="HalouSuite.Payload.PluginManifest" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" />
+        <SkipType name="HalouSuite.Payload.CadPluginFeature" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" />
+        <SkipType name="HalouSuite.Payload.SuiteConfiguration" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" />
+        <SkipType name="HalouSuite.Payload.CadClipboardPayload" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" />
+        <SkipType name="HalouSuite.Payload.CadEntityDefinition" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" />
+        <SkipType name="HalouSuite.Payload.CadLayerDefinition" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" />
+        <SkipType name="HalouSuite.Payload.HotkeyBinding" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" />
+        <SkipType name="HalouSuite.Payload.LicenseInfo" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" />
+        <SkipType name="HalouSuite.Payload.LicenseAccountInfo" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" />
   </Module>
 </Obfuscator>
 "@
