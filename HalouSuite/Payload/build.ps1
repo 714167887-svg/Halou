@@ -41,11 +41,12 @@ function Protect-HalouResource {
         $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
         $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
         $aes.Key = $derive.GetBytes(32)
+        $hmacKey = $derive.GetBytes(32)
         $aes.IV = $iv
 
         $ms = New-Object System.IO.MemoryStream
         try {
-            $magic = [System.Text.Encoding]::ASCII.GetBytes('HLR1')
+            $magic = [System.Text.Encoding]::ASCII.GetBytes('HLR2')
             $ms.Write($magic, 0, $magic.Length)
             $ms.Write($salt, 0, $salt.Length)
             $ms.Write($iv, 0, $iv.Length)
@@ -61,7 +62,17 @@ function Protect-HalouResource {
             } finally {
                 $encryptor.Dispose()
             }
-            [System.IO.File]::WriteAllBytes($OutputPath, $ms.ToArray())
+            $body = $ms.ToArray()
+            $hmac = New-Object System.Security.Cryptography.HMACSHA256(,$hmacKey)
+            try {
+                $tag = $hmac.ComputeHash($body)
+                $final = New-Object byte[] ($body.Length + $tag.Length)
+                [System.Buffer]::BlockCopy($body, 0, $final, 0, $body.Length)
+                [System.Buffer]::BlockCopy($tag, 0, $final, $body.Length, $tag.Length)
+                [System.IO.File]::WriteAllBytes($OutputPath, $final)
+            } finally {
+                $hmac.Dispose()
+            }
         } finally {
             $ms.Dispose()
         }

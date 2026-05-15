@@ -411,7 +411,8 @@ namespace HalouSuite.Payload
             byte[] blob = ReadAllBytes(stream);
             if (blob.Length < 36) throw new InvalidDataException("受保护资源格式不完整。 ");
             string magic = Encoding.ASCII.GetString(blob, 0, 4);
-            if (!string.Equals(magic, "HLR1", StringComparison.Ordinal)) throw new InvalidDataException("受保护资源标识不正确。 ");
+            if (!string.Equals(magic, "HLR1", StringComparison.Ordinal) && !string.Equals(magic, "HLR2", StringComparison.Ordinal))
+                throw new InvalidDataException("受保护资源标识不正确。 ");
 
             byte[] salt = new byte[16];
             byte[] iv = new byte[16];
@@ -421,14 +422,33 @@ namespace HalouSuite.Payload
             using (Rfc2898DeriveBytes derive = new Rfc2898DeriveBytes(ProtectedPayloadResourceKey, salt, 10000))
             using (AesManaged aes = new AesManaged())
             {
+                byte[] aesKey = derive.GetBytes(32);
+                byte[] hmacKey = derive.GetBytes(32);
+                int cipherOffset = 36;
+                int cipherLength = blob.Length - cipherOffset;
+                if (string.Equals(magic, "HLR2", StringComparison.Ordinal))
+                {
+                    if (blob.Length < 68) throw new InvalidDataException("受保护资源校验信息不完整。 ");
+                    cipherLength -= 32;
+                    byte[] expected = new byte[32];
+                    Buffer.BlockCopy(blob, blob.Length - 32, expected, 0, expected.Length);
+                    byte[] body = new byte[blob.Length - 32];
+                    Buffer.BlockCopy(blob, 0, body, 0, body.Length);
+                    using (HMACSHA256 hmac = new HMACSHA256(hmacKey))
+                    {
+                        byte[] actual = hmac.ComputeHash(body);
+                        if (!FixedTimeEquals(expected, actual)) throw new InvalidDataException("受保护资源校验失败。 ");
+                    }
+                }
+
                 aes.KeySize = 256;
                 aes.BlockSize = 128;
                 aes.Mode = CipherMode.CBC;
                 aes.Padding = PaddingMode.PKCS7;
-                aes.Key = derive.GetBytes(32);
+                aes.Key = aesKey;
                 aes.IV = iv;
                 using (ICryptoTransform decryptor = aes.CreateDecryptor())
-                using (MemoryStream input = new MemoryStream(blob, 36, blob.Length - 36))
+                using (MemoryStream input = new MemoryStream(blob, cipherOffset, cipherLength))
                 using (CryptoStream crypto = new CryptoStream(input, decryptor, CryptoStreamMode.Read))
                 using (MemoryStream plain = new MemoryStream())
                 {
@@ -436,6 +456,14 @@ namespace HalouSuite.Payload
                     return plain.ToArray();
                 }
             }
+        }
+
+        private static bool FixedTimeEquals(byte[] a, byte[] b)
+        {
+            if (a == null || b == null || a.Length != b.Length) return false;
+            int diff = 0;
+            for (int i = 0; i < a.Length; i++) diff |= a[i] ^ b[i];
+            return diff == 0;
         }
 
         private string WriteProtectedResourceToRuntime(string relativePath, string extension)
