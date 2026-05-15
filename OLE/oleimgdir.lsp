@@ -58,8 +58,8 @@
   )
   (cond
     ((and local-path (findfile local-path)) local-path)
-    ((and drawing-path (findfile drawing-path)) drawing-path)
     ((and temp-path (findfile temp-path)) temp-path)
+    ((and drawing-path (findfile drawing-path)) drawing-path)
     (T nil)
   )
 )
