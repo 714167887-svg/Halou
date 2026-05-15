@@ -280,17 +280,10 @@ function Set-ClipboardImage([string]$path) {
         $normalizedPath = $path
     }
 
-    # v1.1.65: 优先走 mspaint 路线（与 AutoCAD 自带「画笔图片」一致 → 放大顺滑）；
-    #         失败时回退到旧的位图+EMF 路线。
-    try {
-        Set-ClipboardImage_PaintEmbed $normalizedPath
-        if ($normalizedPath -ne $path) {
-            Remove-Item -LiteralPath $normalizedPath -Force -ErrorAction SilentlyContinue
-        }
-        return
-    } catch {
-        # 静默回退
-    }
+    # v2.0.39: 不再优先走 mspaint/EMF OLE 路线。
+    # 某些 AutoCAD 环境会把 Paint/EMF 剪贴板内容当成带文字的 OLE 对象，弹出“确认 OLE 字体大小”，
+    # 并按 OLE 物理单位重新解释尺寸，导致图片大小和 LSP 的 2500mm 规则对不上。
+    # 改为只写入 96 DPI Bitmap，由 LSP 粘贴后统一按包围盒缩放。
 
     $tmp = Join-Path $env:TEMP ([System.Guid]::NewGuid().ToString() + [System.IO.Path]::GetExtension($normalizedPath))
     Copy-Item -LiteralPath $normalizedPath -Destination $tmp -Force
@@ -324,16 +317,6 @@ function Set-ClipboardImage([string]$path) {
 
         [System.Windows.Forms.Clipboard]::Clear()
         [System.Windows.Forms.Clipboard]::SetImage($bmp)
-
-        # v1.1.64: 追加 CF_ENHMETAFILE，让 AutoCAD OLE 粘贴优先选择 EMF 形式（仍是位图内核但渲染缩放更平滑）
-        try {
-            $hemf = [HalouEmfHelper]::CreateEmfFromImage($bmp)
-            if ($hemf -ne [IntPtr]::Zero) {
-                [void][HalouEmfHelper]::AppendEmfToClipboard($hemf)
-            }
-        } catch {
-            # 失败不影响主流程，仍有位图可用
-        }
 
         $bmp.Dispose()
         $img.Dispose()
