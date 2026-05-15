@@ -190,7 +190,7 @@ namespace HalouSuite.Payload
                     }
                 }
 
-                // 取该 feature 的 LSP 路径（已解压到 EmbeddedRoot），用于运行时兜底 (load "...")
+                // 取该 feature 的 LSP 加载表达式（优先加密资源临时解密），用于运行时兜底。
                 string lispLoadExpr = null;
                 if (_manifest != null && _manifest.Features != null)
                 {
@@ -199,10 +199,9 @@ namespace HalouSuite.Payload
                         if (f != null && string.Equals(f.Id, featureId, StringComparison.OrdinalIgnoreCase)
                             && !string.IsNullOrWhiteSpace(f.LoadPath))
                         {
-                            string lp = ResolveManifestPath(f.LoadPath);
-                            if (!string.IsNullOrWhiteSpace(lp) && File.Exists(lp))
+                            if (!HasProtectedPayloadResource(f.LoadPath))
                             {
-                                lispLoadExpr = "(load \"" + lp.Replace('\\', '/').Replace("\"", "\\\"") + "\")";
+                                TryBuildLispLoadExpression(f.LoadPath, false, out lispLoadExpr);
                             }
                             break;
                         }

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Web.Script.Serialization;
 using Autodesk.AutoCAD.ApplicationServices;
@@ -37,6 +38,9 @@ namespace HalouSuite.Payload
         // ===== 通用常量 =====
         private const string PaletteTitle = "Halou 插件集合";
         private const string StatusPrefix = "Halou Suite";
+        private const string ProtectedPayloadResourcePrefix = "ProtectedPayload.";
+        private const string LegacyPayloadResourcePrefix = "Payload.";
+        private const string ProtectedPayloadResourceKey = "HalouSuite.Payload.Resources.2026-05";
         // v2.0.17：刷新最小间隔从 60s 提到 300s（5 分钟），避免每分钟一次同步网络阻塞 UI
         private const int MinimumRefreshSeconds = 300;
         // Phase 2 起，CurrentVersion 与 PayloadEntry.PayloadVersion 同步
@@ -142,6 +146,7 @@ namespace HalouSuite.Payload
 
             Directory.CreateDirectory(_configDirectory);
             ExtractEmbeddedPayloads();
+            CleanupPlaintextPayloadFiles();
             EnsureOleHelperInTemp();
             _configuration = SuiteConfiguration.Load(_configPath, _localManifestPath);
             _manifest = PluginManifest.Load(_configuration, _localManifestPath, _manifestCachePath, out _statusMessage);
@@ -239,8 +244,8 @@ namespace HalouSuite.Payload
 
         private void ExtractEmbeddedPayloads()
         {
-            // 将嵌入到 DLL 里的 LSP/辅助脚本解压到 DLL 旁的子目录，
-            // 让买家更新 DLL 后不用单独推送资源文件。
+            // 只解压非敏感资源。LSP/PS1 自 v2.0.34 起以 ProtectedPayload.* 加密嵌入，
+            // 不再落到 payloads\OLE/ZK/KB/JT 等可直读目录。
             try
             {
                 Assembly asm = Assembly.GetExecutingAssembly();
@@ -264,16 +269,18 @@ namespace HalouSuite.Payload
                         fileName = res.Substring("EmbeddedManifest.".Length);
                         targetDir = _assemblyDirectory;
                     }
-                    // Payload.<subdir>.<filename>：解到 DLL 旁同名子目录
-                    else if (res.StartsWith("Payload.", StringComparison.Ordinal))
+                    // 旧包兼容：若仍存在明文 Payload.* 资源，只解压非 LSP/PS1；敏感脚本改为运行时临时解密加载。
+                    else if (res.StartsWith(LegacyPayloadResourcePrefix, StringComparison.Ordinal))
                     {
-                        string rel = res.Substring("Payload.".Length);
+                        string rel = res.Substring(LegacyPayloadResourcePrefix.Length);
                         int firstDot = rel.IndexOf('.');
                         if (firstDot <= 0) continue;
                         string subdir = rel.Substring(0, firstDot);
                         fileName = rel.Substring(firstDot + 1);
+                        if (IsProtectedScriptFileName(fileName)) continue;
                         targetDir = Path.Combine(_assemblyDirectory, subdir);
                     }
+                    else if (res.StartsWith(ProtectedPayloadResourcePrefix, StringComparison.Ordinal)) continue;
                     else continue;
 
                     string targetPath = Path.Combine(targetDir, fileName);
@@ -302,17 +309,199 @@ namespace HalouSuite.Payload
             }
         }
 
+        private static bool IsProtectedScriptFileName(string fileName)
+        {
+            string ext = Path.GetExtension(fileName ?? string.Empty);
+            return string.Equals(ext, ".lsp", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".ps1", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void CleanupPlaintextPayloadFiles()
+        {
+            // 新版不再需要 payloads\OLE/ZK/KB/JT 下的明文源码。清掉旧版本遗留，避免客户直接浏览到 LISP。
+            try
+            {
+                foreach (string sub in new[] { "OLE", "ZK", "KB", "JT" })
+                {
+                    string dir = Path.Combine(_assemblyDirectory, sub);
+                    if (!Directory.Exists(dir)) continue;
+                    foreach (string pattern in new[] { "*.lsp", "*.ps1", "*.stamp" })
+                    {
+                        foreach (string file in Directory.GetFiles(dir, pattern))
+                        {
+                            try { File.Delete(file); } catch { }
+                        }
+                    }
+
+                    try
+                    {
+                        if (Directory.GetFiles(dir).Length == 0 && Directory.GetDirectories(dir).Length == 0)
+                            Directory.Delete(dir, false);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+
+            CleanupRuntimePayloadFiles();
+        }
+
+        private void CleanupRuntimePayloadFiles()
+        {
+            try
+            {
+                string dir = GetProtectedRuntimeDirectory();
+                if (!Directory.Exists(dir)) return;
+                DateTime cutoff = DateTime.UtcNow.AddHours(-6);
+                foreach (string file in Directory.GetFiles(dir, "halou-*.lsp"))
+                {
+                    try
+                    {
+                        if (File.GetLastWriteTimeUtc(file) < cutoff) File.Delete(file);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        private string GetProtectedRuntimeDirectory()
+        {
+            string temp = Environment.GetEnvironmentVariable("TEMP");
+            if (string.IsNullOrWhiteSpace(temp)) temp = Path.GetTempPath();
+            return Path.Combine(temp, "HalouSuite", "runtime");
+        }
+
+        private string BuildProtectedResourceName(string relativePath)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath)) return null;
+            string normalized = relativePath.Replace('\\', '/').Trim('/');
+            string[] parts = normalized.Split('/');
+            if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1])) return null;
+            return ProtectedPayloadResourcePrefix + parts[0] + "." + parts[1];
+        }
+
+        private Stream OpenProtectedResourceStream(string relativePath)
+        {
+            string resName = BuildProtectedResourceName(relativePath);
+            if (string.IsNullOrWhiteSpace(resName)) return null;
+            try { return Assembly.GetExecutingAssembly().GetManifestResourceStream(resName); }
+            catch { return null; }
+        }
+
+        private bool HasProtectedPayloadResource(string relativePath)
+        {
+            using (Stream s = OpenProtectedResourceStream(relativePath))
+            {
+                return s != null;
+            }
+        }
+
+        private byte[] ReadAllBytes(Stream stream)
+        {
+            using (MemoryStream ms = new MemoryStream())
+            {
+                stream.CopyTo(ms);
+                return ms.ToArray();
+            }
+        }
+
+        private byte[] DecryptProtectedResource(Stream stream)
+        {
+            byte[] blob = ReadAllBytes(stream);
+            if (blob.Length < 36) throw new InvalidDataException("受保护资源格式不完整。 ");
+            string magic = Encoding.ASCII.GetString(blob, 0, 4);
+            if (!string.Equals(magic, "HLR1", StringComparison.Ordinal)) throw new InvalidDataException("受保护资源标识不正确。 ");
+
+            byte[] salt = new byte[16];
+            byte[] iv = new byte[16];
+            Buffer.BlockCopy(blob, 4, salt, 0, salt.Length);
+            Buffer.BlockCopy(blob, 20, iv, 0, iv.Length);
+
+            using (Rfc2898DeriveBytes derive = new Rfc2898DeriveBytes(ProtectedPayloadResourceKey, salt, 10000))
+            using (AesManaged aes = new AesManaged())
+            {
+                aes.KeySize = 256;
+                aes.BlockSize = 128;
+                aes.Mode = CipherMode.CBC;
+                aes.Padding = PaddingMode.PKCS7;
+                aes.Key = derive.GetBytes(32);
+                aes.IV = iv;
+                using (ICryptoTransform decryptor = aes.CreateDecryptor())
+                using (MemoryStream input = new MemoryStream(blob, 36, blob.Length - 36))
+                using (CryptoStream crypto = new CryptoStream(input, decryptor, CryptoStreamMode.Read))
+                using (MemoryStream plain = new MemoryStream())
+                {
+                    crypto.CopyTo(plain);
+                    return plain.ToArray();
+                }
+            }
+        }
+
+        private string WriteProtectedResourceToRuntime(string relativePath, string extension)
+        {
+            using (Stream s = OpenProtectedResourceStream(relativePath))
+            {
+                if (s == null) return null;
+                byte[] plain = DecryptProtectedResource(s);
+                string dir = GetProtectedRuntimeDirectory();
+                Directory.CreateDirectory(dir);
+                string ext = string.IsNullOrWhiteSpace(extension) ? Path.GetExtension(relativePath) : extension;
+                if (string.IsNullOrWhiteSpace(ext)) ext = ".tmp";
+                string path = Path.Combine(dir, "halou-" + Guid.NewGuid().ToString("N") + ext);
+                File.WriteAllBytes(path, plain);
+                return path;
+            }
+        }
+
+        private bool TryBuildLispLoadExpression(string relativePath, bool deleteAfterLoad, out string expression)
+        {
+            expression = null;
+            string runtimePath = null;
+            if (HasProtectedPayloadResource(relativePath))
+            {
+                runtimePath = WriteProtectedResourceToRuntime(relativePath, ".lsp");
+            }
+            else
+            {
+                string loadPath = ResolveManifestPath(relativePath);
+                if (!string.IsNullOrWhiteSpace(loadPath) && File.Exists(loadPath)) runtimePath = loadPath;
+            }
+
+            if (string.IsNullOrWhiteSpace(runtimePath) || !File.Exists(runtimePath)) return false;
+
+            string escaped = runtimePath.Replace('\\', '/').Replace("\"", "\\\"");
+            if (deleteAfterLoad && HasProtectedPayloadResource(relativePath))
+            {
+                expression = string.Format("(progn (load \"{0}\") (vl-catch-all-apply 'vl-file-delete (list \"{0}\")) (princ))", escaped);
+            }
+            else
+            {
+                expression = string.Format("(progn (load \"{0}\") (princ))", escaped);
+            }
+            return true;
+        }
+
         // 把 OLE 辅助 PS1 复制到 %TEMP%，保证 LSP 里 oleimg:helper-path 的 TEMP 分支 100% 命中，
         // 避免 *load-truename* 在某些加载场景下未设置导致的"未找到辅助脚本"。
         private void EnsureOleHelperInTemp()
         {
             try
             {
-                string src = Path.Combine(_assemblyDirectory, "OLE", "oleimgdir-clipboard.ps1");
-                if (!File.Exists(src)) return;
                 string temp = Environment.GetEnvironmentVariable("TEMP");
                 if (string.IsNullOrWhiteSpace(temp)) temp = Path.GetTempPath();
                 string dst = Path.Combine(temp, "oleimgdir-clipboard.ps1");
+                if (HasProtectedPayloadResource("OLE/oleimgdir-clipboard.ps1"))
+                {
+                    using (Stream s = OpenProtectedResourceStream("OLE/oleimgdir-clipboard.ps1"))
+                    {
+                        if (s != null) File.WriteAllBytes(dst, DecryptProtectedResource(s));
+                    }
+                    return;
+                }
+
+                string src = Path.Combine(_assemblyDirectory, "OLE", "oleimgdir-clipboard.ps1");
+                if (!File.Exists(src)) return;
                 if (!File.Exists(dst) || File.GetLastWriteTimeUtc(src) > File.GetLastWriteTimeUtc(dst))
                 {
                     File.Copy(src, dst, true);

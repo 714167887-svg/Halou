@@ -134,17 +134,8 @@ namespace HalouSuite.Payload
                 // AutoCAD LSP open/read-line 默认按系统 ANSI(CP_936) 读，写 Default 编码
                 File.WriteAllLines(listPath, files, System.Text.Encoding.Default);
 
-                // 同步把辅助 PS1 复制到 TEMP，LSP 能稳定通过 TEMP 分支找到
-                try
-                {
-                    string ps1Src = Path.Combine(_assemblyDirectory, "OLE", "oleimgdir-clipboard.ps1");
-                    string ps1Dst = Path.Combine(temp, "oleimgdir-clipboard.ps1");
-                    if (File.Exists(ps1Src) && (!File.Exists(ps1Dst) || File.GetLastWriteTimeUtc(ps1Src) > File.GetLastWriteTimeUtc(ps1Dst)))
-                    {
-                        File.Copy(ps1Src, ps1Dst, true);
-                    }
-                }
-                catch { }
+                // 同步把辅助 PS1 解密/复制到 TEMP，LSP 能稳定通过 TEMP 分支找到。
+                EnsureOleHelperInTemp();
 
                 Document doc = Application.DocumentManager.MdiActiveDocument;
                 if (doc == null)
@@ -153,12 +144,11 @@ namespace HalouSuite.Payload
                     return;
                 }
 
-                string olePath = Path.Combine(_assemblyDirectory, "OLE", "oleimgdir.lsp");
                 string loadPrefix = string.Empty;
-                if (File.Exists(olePath))
+                string loadExpression;
+                if (TryBuildLispLoadExpression("OLE/oleimgdir.lsp", true, out loadExpression))
                 {
-                    string escaped = olePath.Replace('\\', '/').Replace("\"", "\\\"");
-                    loadPrefix = string.Format("(if (not c:OLEDROP) (load \"{0}\")) ", escaped);
+                    loadPrefix = loadExpression + " ";
                 }
 
                 doc.SendStringToExecute(loadPrefix + "OLEDROP ", true, false, false);
@@ -201,15 +191,11 @@ namespace HalouSuite.Payload
                 bool on;
                 if (!_configuration.AutoLoadFeatures.TryGetValue(f.Id, out on) || !on) continue;
 
-                string loadPath = ResolveManifestPath(f.LoadPath);
-                if (string.IsNullOrWhiteSpace(loadPath) || !File.Exists(loadPath)) continue;
-
-                string normalized = loadPath.Replace('\\', '/').Replace("\"", "\\\"");
+                string loadExpression;
+                if (!TryBuildLispLoadExpression(f.LoadPath, true, out loadExpression)) continue;
                 try
                 {
-                    doc.SendStringToExecute(
-                        string.Format("(progn (load \"{0}\") (princ)) ", normalized),
-                        false, false, false);
+                    doc.SendStringToExecute(loadExpression + " ", false, false, false);
                     loaded++;
                 }
                 catch { }

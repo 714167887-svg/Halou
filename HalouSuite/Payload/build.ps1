@@ -14,6 +14,62 @@ $outName = if ($ArxTag) { "HalouPayload.$Version.$ArxTag.dll" } else { "HalouPay
 $out = Join-Path $dist $outName
 $csc = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $autocadDir = $AutocadDir
+$resourceProtectKey = 'HalouSuite.Payload.Resources.2026-05'
+
+function Protect-HalouResource {
+    param(
+        [Parameter(Mandatory = $true)][string]$InputPath,
+        [Parameter(Mandatory = $true)][string]$OutputPath
+    )
+
+    $plain = [System.IO.File]::ReadAllBytes($InputPath)
+    $salt = New-Object byte[] 16
+    $iv = New-Object byte[] 16
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($salt)
+        $rng.GetBytes($iv)
+    } finally {
+        $rng.Dispose()
+    }
+
+    $derive = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($resourceProtectKey, $salt, 10000)
+    $aes = New-Object System.Security.Cryptography.AesManaged
+    try {
+        $aes.KeySize = 256
+        $aes.BlockSize = 128
+        $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+        $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+        $aes.Key = $derive.GetBytes(32)
+        $aes.IV = $iv
+
+        $ms = New-Object System.IO.MemoryStream
+        try {
+            $magic = [System.Text.Encoding]::ASCII.GetBytes('HLR1')
+            $ms.Write($magic, 0, $magic.Length)
+            $ms.Write($salt, 0, $salt.Length)
+            $ms.Write($iv, 0, $iv.Length)
+            $encryptor = $aes.CreateEncryptor()
+            try {
+                $cs = New-Object System.Security.Cryptography.CryptoStream($ms, $encryptor, [System.Security.Cryptography.CryptoStreamMode]::Write)
+                try {
+                    $cs.Write($plain, 0, $plain.Length)
+                    $cs.FlushFinalBlock()
+                } finally {
+                    $cs.Dispose()
+                }
+            } finally {
+                $encryptor.Dispose()
+            }
+            [System.IO.File]::WriteAllBytes($OutputPath, $ms.ToArray())
+        } finally {
+            $ms.Dispose()
+        }
+    } finally {
+        $derive.Dispose()
+        $aes.Dispose()
+    }
+}
 
 if (-not (Test-Path $csc)) { throw "C# 编译器不存在: $csc" }
 
@@ -44,9 +100,12 @@ if (Test-Path (Join-Path $autocadDir 'acmgd.dll')) {
 }
 
 # v2.0.16: 嵌入功能子目录（OLE/ZK/KB/JT）下的 .lsp/.ps1；
-# 运行时 ExtractEmbeddedPayloads() 会按 "Payload.<subdir>.<filename>" 资源命名解压到 DLL 旁 <subdir>\
+# v2.0.34: 改为先加密再嵌入，资源名为 "ProtectedPayload.<subdir>.<filename>"，运行时只在临时目录短暂解密加载。
 $payloadArgs = @()
 $halouRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
+$protectedDir = Join-Path $dist 'protected-resources'
+if (Test-Path $protectedDir) { Remove-Item $protectedDir -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Force $protectedDir | Out-Null
 foreach ($sub in @('OLE','ZK','KB','JT')) {
     $subDir = Join-Path $halouRoot $sub
     if (-not (Test-Path $subDir)) {
@@ -56,9 +115,12 @@ foreach ($sub in @('OLE','ZK','KB','JT')) {
     Get-ChildItem -Path $subDir -File -Recurse:$false |
         Where-Object { $_.Extension -in '.lsp', '.ps1' } |
         ForEach-Object {
-            $resName = "Payload.$sub.$($_.Name)"
-            $payloadArgs += "/resource:$($_.FullName),$resName"
-            Write-Host "  embed: $sub/$($_.Name) -> $resName"
+            $resName = "ProtectedPayload.$sub.$($_.Name)"
+            $safeName = ($sub + '-' + $_.Name + '.hlr') -replace '[\\/:*?"<>|]', '_'
+            $protectedFile = Join-Path $protectedDir $safeName
+            Protect-HalouResource -InputPath $_.FullName -OutputPath $protectedFile
+            $payloadArgs += "/resource:$protectedFile,$resName"
+            Write-Host "  protect+embed: $sub/$($_.Name) -> $resName"
         }
 }
 

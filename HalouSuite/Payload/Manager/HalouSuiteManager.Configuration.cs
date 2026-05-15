@@ -212,15 +212,14 @@ namespace HalouSuite.Payload
                 throw new InvalidOperationException("当前没有活动文档。请先打开图纸。");
             }
 
-            string loadPath = ResolveManifestPath(feature.LoadPath);
-            if (string.IsNullOrWhiteSpace(loadPath) || !File.Exists(loadPath))
+            string loadExpression;
+            if (!TryBuildLispLoadExpression(feature.LoadPath, true, out loadExpression))
             {
+                string loadPath = ResolveManifestPath(feature.LoadPath);
                 throw new FileNotFoundException("未找到 LISP 文件。", loadPath ?? feature.LoadPath);
             }
 
-            string normalizedPath = loadPath.Replace('\\', '/');
-            string escapedPath = normalizedPath.Replace("\"", "\\\"");
-            doc.SendStringToExecute(string.Format("(progn (load \"{0}\") (princ)) ", escapedPath), true, false, false);
+            doc.SendStringToExecute(loadExpression + " ", true, false, false);
 
             if (!string.IsNullOrWhiteSpace(feature.Command))
             {
