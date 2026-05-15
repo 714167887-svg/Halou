@@ -60,6 +60,59 @@ function Resolve-ArxTag {
     return $null
 }
 
+function Get-HalouTrustedPaths {
+    $temp = $env:TEMP
+    if ([string]::IsNullOrWhiteSpace($temp)) { $temp = [System.IO.Path]::GetTempPath() }
+    $runtime = Join-Path $temp 'HalouSuite\runtime'
+    @(
+        "$env:LOCALAPPDATA\HalouSuite",
+        "$env:LOCALAPPDATA\HalouSuite\bin",
+        "$env:LOCALAPPDATA\HalouSuite\payloads",
+        "$env:LOCALAPPDATA\HalouSuite\...",
+        $runtime,
+        (Join-Path $temp 'HalouSuite\...')
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+}
+
+function Add-TrustedPathsToProfile {
+    param(
+        [string]$VariablesKey,
+        [string[]]$Paths
+    )
+
+    New-Item $VariablesKey -Force | Out-Null
+    $existing = ''
+    try { $existing = (Get-ItemProperty $VariablesKey -Name TRUSTEDPATHS -ErrorAction SilentlyContinue).TRUSTEDPATHS } catch { }
+    $items = @()
+    if (-not [string]::IsNullOrWhiteSpace($existing)) {
+        $items += ($existing -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    }
+    foreach ($path in $Paths) {
+        if ($items -notcontains $path) { $items += $path }
+    }
+    Set-ItemProperty $VariablesKey -Name TRUSTEDPATHS -Value ($items -join ';')
+}
+
+function Register-HalouTrustedPaths {
+    param([string]$AcadRoot)
+
+    if (-not (Test-Path $AcadRoot)) { return 0 }
+    $paths = @(Get-HalouTrustedPaths)
+    $count = 0
+    Get-ChildItem $AcadRoot -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -like 'ACAD-*' } | ForEach-Object {
+        $profilesKey = Join-Path $_.PSPath 'Profiles'
+        if (Test-Path $profilesKey) {
+            Get-ChildItem $profilesKey -ErrorAction SilentlyContinue | ForEach-Object {
+                $variablesKey = Join-Path $_.PSPath 'Variables'
+                Add-TrustedPathsToProfile -VariablesKey $variablesKey -Paths $paths
+                Write-Host "   ✓ TRUSTEDPATHS：$($_.PSChildName)" -ForegroundColor Green
+                $script:trustedProfileCount++
+            }
+        }
+    }
+    return $count
+}
+
 $here = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($ReleaseDir)) {
     # 默认假设 halou-release 与 Halou 同级
@@ -282,6 +335,19 @@ if (-not (Test-Path $regBase)) {
     if ($regCount -eq 0) {
         Write-Host "   ⚠ $regBase 下没有 ACAD-* 子键，跳过" -ForegroundColor Yellow
     }
+}
+
+# ---- 7. 加入 AutoCAD 受信任路径 ----
+Write-Host ""
+Write-Host "==> 7. 写入 AutoCAD 受信任路径" -ForegroundColor Cyan
+$script:trustedProfileCount = 0
+[void](Register-HalouTrustedPaths -AcadRoot $regBase)
+if ($script:trustedProfileCount -gt 0) {
+    Write-Host "   ✓ 已把 HalouSuite bin/payloads/runtime 加入 TRUSTEDPATHS" -ForegroundColor Green
+    Write-Host "     保持 SECURELOAD 开启也不会再弹 HalouHost.dll / LSP 加载确认。" -ForegroundColor DarkYellow
+} else {
+    Write-Host "   ⚠ 未找到 AutoCAD Profiles，未能自动写 TRUSTEDPATHS" -ForegroundColor Yellow
+    Write-Host "     可在 AutoCAD 里执行 TRUSTEDPATHS，手工加入：$env:LOCALAPPDATA\HalouSuite\..." -ForegroundColor Yellow
 }
 
 Write-Host ""
