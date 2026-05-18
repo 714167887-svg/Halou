@@ -22,10 +22,21 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 
+function Get-AcadTargetFramework {
+    param([string]$AutocadDir)
+    try {
+        $acmgd = Join-Path $AutocadDir 'acmgd.dll'
+        $major = [System.Reflection.AssemblyName]::GetAssemblyName($acmgd).Version.Major
+        if ($major -ge 25) { return 'net8.0-windows' }
+    } catch { }
+    return 'net48'
+}
+
 Write-Host "=== [1/3] 构建 Contract ===" -ForegroundColor Cyan
-& (Join-Path $root 'Contract\build.ps1')
 
 if ($null -eq $ArxSdks -or $ArxSdks.Count -eq 0) {
+    & (Join-Path $root 'Contract\build.ps1')
+
     # 单 SDK 模式（默认）：与历史行为完全一致，输出无后缀文件名
     Write-Host "=== [2/3] 构建 Host (default SDK) ===" -ForegroundColor Cyan
     & (Join-Path $root 'Host\build.ps1')
@@ -40,10 +51,14 @@ if ($null -eq $ArxSdks -or $ArxSdks.Count -eq 0) {
     Write-Host "  Payload : $(Join-Path $root ('Payload\dist\HalouPayload.' + $PayloadVersion + '.dll'))"
 } else {
     # 多 SDK 模式：每个 SDK 编一份带 ArxTag 后缀的 DLL
-    $i = 2
-    $total = 1 + $ArxSdks.Count * 2
+    $i = 1
+    $total = $ArxSdks.Count * 3
     foreach ($tag in $ArxSdks.Keys) {
         $sdk = $ArxSdks[$tag]
+        $tfm = Get-AcadTargetFramework $sdk
+        Write-Host "=== [$i/$total] 构建 Contract ($tag / $tfm) ===" -ForegroundColor Cyan
+        & (Join-Path $root 'Contract\build.ps1') -ArxTag $tag -TargetFramework $tfm
+        $i++
         Write-Host "=== [$i/$total] 构建 Host ($tag <- $sdk) ===" -ForegroundColor Cyan
         & (Join-Path $root 'Host\build.ps1') -AutocadDir $sdk -ArxTag $tag
         $i++
@@ -54,8 +69,8 @@ if ($null -eq $ArxSdks -or $ArxSdks.Count -eq 0) {
 
     Write-Host ""
     Write-Host "=== 构建完成（多 SDK） ===" -ForegroundColor Green
-    Write-Host "  Contract: $(Join-Path $root 'Contract\dist\HalouContract.dll')"
     foreach ($tag in $ArxSdks.Keys) {
+        Write-Host "  Contract[$tag]: $(Join-Path $root ('Contract\dist\HalouContract.' + $tag + '.dll'))"
         Write-Host "  Host[$tag]    : $(Join-Path $root ('Host\dist\HalouHost.' + $tag + '.dll'))"
         Write-Host "  Payload[$tag] : $(Join-Path $root ('Payload\dist\HalouPayload.' + $PayloadVersion + '.' + $tag + '.dll'))"
     }

@@ -246,7 +246,16 @@ if (-not $hostDll) {
         }
     }
 }
-$contractDll = Join-Path $ReleaseDir "HalouContract.dll"
+# 选 Contract DLL：AutoCAD 2025 的 Host/Payload 是 .NET 8，必须配套 HalouContract.arx25.dll；部署时仍重命名为 HalouContract.dll。
+$contractDll = $null
+if (-not [string]::IsNullOrWhiteSpace($ArxTag)) {
+    $taggedContract = Join-Path $ReleaseDir ("HalouContract." + $ArxTag + ".dll")
+    if (Test-Path $taggedContract) {
+        $contractDll = $taggedContract
+        Write-Host "   选择 contract: HalouContract.$ArxTag.dll" -ForegroundColor Cyan
+    }
+}
+if (-not $contractDll) { $contractDll = Join-Path $ReleaseDir "HalouContract.dll" }
 $manifest    = Join-Path $ReleaseDir "halou-plugin-manifest.json"
 
 foreach ($f in @($hostDll, $contractDll)) {

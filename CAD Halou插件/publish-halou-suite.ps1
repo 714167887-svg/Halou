@@ -89,18 +89,19 @@ if (-not $SkipBuild) {
     Write-Host "跳过编译（-SkipBuild）" -ForegroundColor Yellow
 }
 
-$contractDll = Join-Path $suiteRoot 'Contract\dist\HalouContract.dll'
-if (-not (Test-Path $contractDll)) { throw "构建产物缺失：$contractDll" }
-
 # hostDlls / payloadDlls：tag -> 绝对路径；单 SDK 模式 tag = ''
+$contractDlls = [ordered]@{}
 $hostDlls    = [ordered]@{}
 $payloadDlls = [ordered]@{}
 if ($multiSdk) {
     foreach ($tag in $ArxSdks.Keys) {
+        $c = Join-Path $suiteRoot "Contract\dist\HalouContract.$tag.dll"
         $h = Join-Path $suiteRoot "Host\dist\HalouHost.$tag.dll"
         $p = Join-Path $suiteRoot "Payload\dist\HalouPayload.$Version.$tag.dll"
+        if (-not (Test-Path $c)) { throw "构建产物缺失：$c" }
         if (-not (Test-Path $h)) { throw "构建产物缺失：$h" }
         if (-not (Test-Path $p)) { throw "构建产物缺失：$p" }
+        $contractDlls[$tag] = $c
         $hostDlls[$tag]    = $h
         $payloadDlls[$tag] = $p
     }
@@ -108,10 +109,13 @@ if ($multiSdk) {
         throw "DefaultArxTag '$DefaultArxTag' 不在 ArxSdks 列表中：$($ArxSdks.Keys -join ', ')"
     }
 } else {
+    $c = Join-Path $suiteRoot 'Contract\dist\HalouContract.dll'
     $h = Join-Path $suiteRoot 'Host\dist\HalouHost.dll'
     $p = Join-Path $suiteRoot ("Payload\dist\HalouPayload.$Version.dll")
+    if (-not (Test-Path $c)) { throw "构建产物缺失：$c" }
     if (-not (Test-Path $h)) { throw "构建产物缺失：$h" }
     if (-not (Test-Path $p)) { throw "构建产物缺失：$p" }
+    $contractDlls[''] = $c
     $hostDlls['']    = $h
     $payloadDlls[''] = $p
 }
@@ -202,13 +206,15 @@ if (-not $DryRun) {
 
 # ---- 5. 同步文件到发布仓库 ----
 Write-Step "同步文件到发布仓库 $dstRelease"
-Copy-Item $contractDll (Join-Path $dstRelease 'HalouContract.dll') -Force
 if ($multiSdk) {
+    Copy-Item $contractDlls[$DefaultArxTag] (Join-Path $dstRelease 'HalouContract.dll') -Force
     foreach ($tag in $ArxSdks.Keys) {
+        Copy-Item $contractDlls[$tag] (Join-Path $dstRelease "HalouContract.$tag.dll") -Force
         Copy-Item $hostDlls[$tag]    (Join-Path $dstRelease "HalouHost.$tag.dll")              -Force
         Copy-Item $payloadDlls[$tag] (Join-Path $dstRelease "HalouPayload.$Version.$tag.dll") -Force
     }
 } else {
+    Copy-Item $contractDlls[''] (Join-Path $dstRelease 'HalouContract.dll')                   -Force
     Copy-Item $hostDlls['']    (Join-Path $dstRelease 'HalouHost.dll')                       -Force
     Copy-Item $payloadDlls[''] (Join-Path $dstRelease "HalouPayload.$Version.dll")           -Force
 }
