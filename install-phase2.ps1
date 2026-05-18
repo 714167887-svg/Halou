@@ -130,8 +130,15 @@ function Register-HalouTrustedPaths {
 
 $here = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($ReleaseDir)) {
-    # 默认假设 halou-release 与 Halou 同级
-    $ReleaseDir = Join-Path $here "..\halou-release\release"
+    # 平铺客户包：install.ps1 与 HalouHost/HalouPayload 同目录，优先直接使用当前目录。
+    # 开发仓库：再回退到 halou-release 与 Halou 同级的布局。
+    if ((Test-Path (Join-Path $here 'HalouContract.dll')) -and
+        ((Get-ChildItem $here -Filter 'HalouHost*.dll' -ErrorAction SilentlyContinue | Select-Object -First 1) -ne $null) -and
+        ((Get-ChildItem $here -Filter 'HalouPayload*.dll' -ErrorAction SilentlyContinue | Select-Object -First 1) -ne $null)) {
+        $ReleaseDir = $here
+    } else {
+        $ReleaseDir = Join-Path $here "..\halou-release\release"
+    }
 }
 $ReleaseDir = (Resolve-Path $ReleaseDir -ErrorAction SilentlyContinue)
 if (-not $ReleaseDir -or -not (Test-Path $ReleaseDir)) {
