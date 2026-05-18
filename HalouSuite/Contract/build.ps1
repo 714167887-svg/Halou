@@ -49,9 +49,15 @@ if ($TargetFramework -eq 'net8.0-windows') {
 } else {
     $csc = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
     if (-not (Test-Path $csc)) { throw "C# 编译器不存在: $csc" }
-    & $csc /nologo /target:library /platform:anycpu /optimize+ /out:$out `
+    # 与 net8 路径一致：tagged 文件只是发布名；程序集名必须仍是 HalouContract，否则部署为 HalouContract.dll 后依赖解析会失败。
+    $compileDir = if ($ArxTag) { Join-Path $dist ("_build\" + $ArxTag) } else { $dist }
+    New-Item -ItemType Directory -Force $compileDir | Out-Null
+    $compileOut = Join-Path $compileDir 'HalouContract.dll'
+    & $csc /nologo /target:library /platform:anycpu /optimize+ /out:$compileOut `
         /r:System.dll `
         @srcFiles
+    if ($LASTEXITCODE -ne 0) { throw "Contract 构建失败 ($LASTEXITCODE)" }
+    if ($compileOut -ne $out) { Copy-Item $compileOut $out -Force }
 }
 
 if ($LASTEXITCODE -ne 0) { throw "Contract 构建失败 ($LASTEXITCODE)" }
