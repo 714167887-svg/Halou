@@ -17,7 +17,8 @@
     halou-release/release/ 的本地路径。默认 ../halou-release/release（相对脚本位置）
 
 .PARAMETER AcadVersion
-    AutoCAD 版本号。默认 R24.0（acad 2021）
+    AutoCAD 版本号。不传时自动扫描 HKCU 已安装 AutoCAD 版本并选择最高版本。
+    默认自动识别；可显式指定：R24.0（2021）、R24.1（2022）、R24.2（2023）、R24.3（2024）、R25.0（2025）、R25.1（2026）
     其他常见：R24.1 (2022), R24.2 (2023), R24.3 (2024), R25.0 (2025), R25.1 (2026)
 
 .PARAMETER AcadLanguage
@@ -37,7 +38,7 @@
 #>
 param(
     [string]$ReleaseDir = "",
-    [string]$AcadVersion = "R24.0",
+    [string]$AcadVersion = "",
     # 多 ARX SDK 发布模式：指定部署哪个 tag。不传则根据 $AcadVersion 推断默认值。
     # AutoCAD 2021/2022/2023 (R24.0/R24.1/R24.2) -> arx24
     # AutoCAD 2024+      (R24.3/R25.x)         -> arx25
@@ -58,6 +59,20 @@ function Resolve-ArxTag {
         if (($major -eq 24 -and $minor -ge 3) -or $major -ge 25) { return 'arx25' }
     }
     return $null
+}
+
+function Get-InstalledAcadVersions {
+    $regBase = "HKCU:\Software\Autodesk\AutoCAD"
+    if (-not (Test-Path $regBase)) { return @() }
+    @(Get-ChildItem $regBase -ErrorAction SilentlyContinue |
+        Where-Object { $_.PSChildName -match '^R\d+\.\d+$' } |
+        ForEach-Object {
+            $name = $_.PSChildName
+            $score = 0
+            if ($name -match '^R(\d+)\.(\d+)$') { $score = [int]$Matches[1] * 100 + [int]$Matches[2] }
+            [pscustomobject]@{ Name = $name; Score = $score }
+        } |
+        Sort-Object Score -Descending)
 }
 
 function Get-HalouTrustedPaths {
@@ -127,6 +142,17 @@ if (-not $ReleaseDir -or -not (Test-Path $ReleaseDir)) {
 
 $bin = "$env:LOCALAPPDATA\HalouSuite\bin"
 $payloads = "$env:LOCALAPPDATA\HalouSuite\payloads"
+
+if ([string]::IsNullOrWhiteSpace($AcadVersion)) {
+    $installedAcadVersions = @(Get-InstalledAcadVersions)
+    if ($installedAcadVersions.Count -gt 0) {
+        $AcadVersion = $installedAcadVersions[0].Name
+        Write-Host "自动识别 AutoCAD 版本：$AcadVersion（如需指定，可加 -AcadVersion R25.0）" -ForegroundColor Cyan
+    } else {
+        $AcadVersion = 'R24.0'
+        Write-Host "未在 HKCU 识别到 AutoCAD 版本，临时回退到 $AcadVersion；如是 2025 请用 -AcadVersion R25.0。" -ForegroundColor Yellow
+    }
+}
 
 Write-Host ""
 Write-Host "===========================================" -ForegroundColor Cyan
