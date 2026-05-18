@@ -211,10 +211,22 @@ if ($Uninstall) {
         }
     }
 
-    # 删文件
-    if (Test-Path "$env:LOCALAPPDATA\HalouSuite") {
-        Remove-Item "$env:LOCALAPPDATA\HalouSuite" -Recurse -Force
-        Write-Host "   删除：$env:LOCALAPPDATA\HalouSuite" -ForegroundColor Yellow
+    # 删文件（容错：跳过被进程持有的文件，逐个删确保其他东西能清掉）
+    $haRoot = "$env:LOCALAPPDATA\HalouSuite"
+    if (Test-Path $haRoot) {
+        $failed = @()
+        Get-ChildItem $haRoot -Recurse -Force -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            ForEach-Object {
+                try { Remove-Item $_.FullName -Force -Recurse -ErrorAction Stop }
+                catch { $failed += $_.FullName }
+            }
+        try { Remove-Item $haRoot -Force -Recurse -ErrorAction Stop; Write-Host "   删除：$haRoot" -ForegroundColor Yellow }
+        catch { $failed += $haRoot }
+        if ($failed.Count -gt 0) {
+            Write-Host "   ⚠ 以下文件/目录被进程持有，未能删除（重启系统后再手动删）：" -ForegroundColor Yellow
+            $failed | ForEach-Object { Write-Host "     - $_" -ForegroundColor DarkYellow }
+        }
     }
 
     Write-Host ""
