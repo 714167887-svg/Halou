@@ -147,6 +147,12 @@ if (-not $ReleaseDir -or -not (Test-Path $ReleaseDir)) {
     exit 1
 }
 
+# 解除源 DLL 的 MOTW (Mark of the Web) 标记，否则 AutoCAD SECURELOAD 会拒绝加载从 zip 解压的 dll
+try {
+    Get-ChildItem $ReleaseDir -Recurse -Include *.dll,*.arx -ErrorAction SilentlyContinue |
+        Unblock-File -ErrorAction SilentlyContinue
+} catch { }
+
 $bin = "$env:LOCALAPPDATA\HalouSuite\bin"
 $payloads = "$env:LOCALAPPDATA\HalouSuite\payloads"
 
@@ -303,6 +309,8 @@ Copy-Item $contractDll (Join-Path $bin "HalouContract.dll") -Force
 if (Test-Path $manifest) {
     Copy-Item $manifest (Join-Path $bin "halou-plugin-manifest.json") -Force
 }
+# 再次解除目标目录的 MOTW（Copy-Item 会保留 ADS）
+try { Get-ChildItem $bin -Filter *.dll -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue } catch { }
 Write-Host "   ✓ HalouHost.dll + HalouContract.dll 已部署" -ForegroundColor Green
 
 # ---- 5. 部署最新 Payload ----
@@ -344,6 +352,7 @@ if ($latest.Name -match '^HalouPayload\.(\d+\.\d+\.\d+(?:-[A-Za-z0-9\.]+)?)\.[A-
     $deployName = $latest.Name
 }
 Copy-Item $latest.FullName (Join-Path $payloads $deployName) -Force
+try { Get-ChildItem $payloads -Filter *.dll -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue } catch { }
 Write-Host "   ✓ $($latest.Name) → $deployName 已部署" -ForegroundColor Green
 
 # 写 lkg
