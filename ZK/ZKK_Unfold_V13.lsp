@@ -602,10 +602,11 @@
   (cond
     ((and (numberp r1) (numberp rl) (>= r1 8.0) (>= rl 8.0))
      (setq hc 2 tc 3 cd 'TAIL_TO_HEAD))
+    ;; v2.0.47: 重新应用 v2.0.41 cd 交换 — 让 l2/l3 始终从黄端(长段≥8)开始读
     ((and (numberp r1) (numberp rl) (< r1 8.0) (>= rl 8.0))
-     (setq hc 2 tc 3 cd 'TAIL_TO_HEAD))
+     (setq hc 2 tc 3 cd 'HEAD_TO_TAIL))
     ((and (numberp r1) (numberp rl) (>= r1 8.0) (< rl 8.0))
-     (setq hc 3 tc 2 cd 'HEAD_TO_TAIL))
+     (setq hc 3 tc 2 cd 'TAIL_TO_HEAD))
     (T (setq hc 2 tc 3 cd 'TAIL_TO_HEAD)))
   (list (cons 'segments fs) (cons 'need-tail-insert nti)
         (cons 'head-color hc) (cons 'tail-color tc)
