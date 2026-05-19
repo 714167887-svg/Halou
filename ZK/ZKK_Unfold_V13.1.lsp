@@ -640,14 +640,14 @@
   (setq l2 (zkk:join-nums osegs "  "))
   ;; v1.1.61: 补尾 8mm 段附加「刨槽」标记
   (if nti (setq l2 (strcat l2 "刨槽")))
-  ;; v1.1.74: l3 同序输出 raw-total - cum（原始段长累加，最后 r2s 显示）
+  ;; v1.4.2 / Payload v2.0.42: l3 改为从左端起算的运行累加 ts（与 unfold 同向）
   (setq n (length osegs) i 0 ts 0.0 l3 "")
   (foreach v osegs
     (setq i (1+ i))
     (if (numberp v)
       (progn (setq ts (+ ts v))
              (if (< i n)
-               (progn (setq s (zkk:r2s (- raw-total ts)))
+               (progn (setq s (zkk:r2s ts))
                       (if (= l3 "") (setq l3 s) (setq l3 (strcat l3 "+" s))))))))
   (strcat l1 "\\P" l2 "\\P" l3))
 
