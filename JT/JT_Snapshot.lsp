@@ -33,6 +33,20 @@
                     (vla-get-preferences (vlax-get-acad-object))))
          (vla-put-graphicswinmodelbackgrndcolor dp old)))))
 
+;;; v2.0.49: 临时进入 CLEANSCREEN（隐藏 ribbon/工具栏/状态栏），
+;;; 让 CAD 视口面积最大化，PNGOUT 输出的像素数显著提升（视口面积↑≈ DPI↑）。
+;;; 返回旧状态：0=原本不是 cleanscreen（已切入）；1=原本就是 cleanscreen（无需切）。
+(defun jt:cleanscreen-on ( / cs)
+  (setq cs (vl-catch-all-apply 'getvar (list "CLEANSCREENSTATE")))
+  (if (vl-catch-all-error-p cs) (setq cs 0))
+  (if (zerop cs)
+    (vl-catch-all-apply 'vl-cmdf (list "._CLEANSCREENON")))
+  cs)
+
+(defun jt:cleanscreen-restore (cs-old)
+  (if (and cs-old (numberp cs-old) (zerop cs-old))
+    (vl-catch-all-apply 'vl-cmdf (list "._CLEANSCREENOFF"))))
+
 ;;; 时间戳：yyyyMMdd_HHmmss
 (defun jt:timestamp ( / d)
   (setq d (rtos (getvar "CDATE") 2 6))
@@ -101,32 +115,62 @@
 
 (defun c:JT ( / frames frame ent tp bb p1 p2 ss sub i j n
               dir full padX padY pp1 pp2 fd-old
-              tmp-pngs single-png all-ents hl-ss bg-old vt-old ti-old)
+              tmp-pngs single-png all-ents hl-ss bg-old vt-old ti-old
+              bg-mode kw cs-old vr-old)
 
   (princ "\n>>> JT 方框截图：剪贴板 + PNG 导出 <<<")
   (princ "\n  支持选多个方框：每选一个回车继续，全部选完再回车结束")
+  (princ "\n  输入 R 可切换截图底色（白底/原底）")
+
+  ;; v2.0.49: 默认沿用原 JT 行为（白底）
+  (setq bg-mode "White")
 
   ;; 1. 循环选择多个方框（已选的方框会高亮+夹点显示，不会忘记）
+  ;;    v2.0.49: 加 R 关键字切换底色
   (setq frames '()  hl-ss (ssadd))
   (while
     (progn
-      (setq frame (entsel (strcat "\n请选择方框 ["
+      (initget "R")
+      (setq frame (entsel (strcat "\n请选择方框 [R=底色("
+                                  (if (eq bg-mode "White") "白底" "原底")
+                                  ")] ["
                                   (itoa (length frames))
                                   " 个已选，回车结束]: ")))
-      frame)
-    (setq frames (cons (car frame) frames))
-    ;; 视觉反馈：高亮虚线 + 加入夹点选择集
-    (redraw (car frame) 3)
-    (ssadd (car frame) hl-ss)
-    (sssetfirst nil hl-ss))
+      ;; frame 取值：list(选中实体) / "R"(切换底色) / nil(回车结束)
+      (cond
+        ((eq frame "R")
+         (initget "W O")
+         (setq kw (getkword
+                    (strcat "\n选择截图底色 [白底(W)/原底(O)] <"
+                            (if (eq bg-mode "White") "白底" "原底")
+                            ">: ")))
+         (cond ((eq kw "O") (setq bg-mode "Original"))
+               ((eq kw "W") (setq bg-mode "White")))
+         (princ (strcat "\n  → 当前底色: "
+                        (if (eq bg-mode "White") "白底（PNG 黑线白底）"
+                                                 "原底（跟随 CAD 当前底色）")))
+         T)                        ;; 继续循环再选方框
+        (frame T)                  ;; 选中了实体 → 继续 body
+        (T nil)))                  ;; 回车 → 退出循环
+    ;; body: 只有 frame 是 entsel 列表时才处理
+    (if (listp frame)
+      (progn
+        (setq frames (cons (car frame) frames))
+        ;; 视觉反馈：高亮虚线 + 加入夹点选择集
+        (redraw (car frame) 3)
+        (ssadd (car frame) hl-ss)
+        (sssetfirst nil hl-ss))))
   (setq frames (reverse frames))
   (if (null frames)
     (progn (princ "\n[取消] 未选任何方框") (sssetfirst nil nil) (exit)))
-  (princ (strcat "\n共 " (itoa (length frames)) " 个方框（已高亮显示）"))
+  (princ (strcat "\n共 " (itoa (length frames)) " 个方框（已高亮显示）"
+                 "，底色: "
+                 (if (eq bg-mode "White") "白底" "原底")))
 
-  ;; v1.1.39: 把模型背景临时切白，让 PNGOUT 截图变成白底（CAD 自动反转白线为黑）。
-  ;; 命令结束时恢复用户原背景色。
-  (setq bg-old (jt:bg-set-white))
+  ;; v1.1.39 / v2.0.49: 根据 bg-mode 决定是否切白底
+  ;;   "White"    → 切白底（CAD 自动反转白线为黑，PNG = 白底黑线，微信清晰）
+  ;;   "Original" → 不切，PNG 跟随用户当前 CAD 底色
+  (setq bg-old (if (eq bg-mode "White") (jt:bg-set-white) nil))
 
   ;; v1.1.39: 临时关闭 ZOOM/VIEW 过渡动画，减少“闪屏”观感。
   (setq vt-old (getvar "VTENABLE"))
@@ -138,6 +182,13 @@
   (vl-catch-all-apply 'setvar (list "TABLEINDICATOR" 0))
   ;; 同时清掉当前选择集（被选中的表格才会显示行列条）
   (sssetfirst nil nil)
+
+  ;; v2.0.49: 进入 CLEANSCREEN 全屏 + 提高 VIEWRES，
+  ;; 让 PNGOUT 拿到的视口像素数显著提升（≈ DPI 提升）
+  (setq cs-old (jt:cleanscreen-on))
+  (setq vr-old (vl-catch-all-apply 'getvar (list "VIEWRES")))
+  (if (vl-catch-all-error-p vr-old) (setq vr-old nil))
+  (vl-catch-all-apply 'vl-cmdf (list "._VIEWRES" "_Y" 20000))
 
   ;; 2. 准备目录：放到系统 TEMP 下避免污染工作目录；命令开始清掉上一轮残留
   (setq dir (strcat (vl-string-right-trim "\\/" (getenv "TEMP")) "\\halou-jt\\"))
@@ -199,7 +250,8 @@
                     (vl-catch-all-apply 'vl-cmdf (list "._ZOOM" "_P"))
                     (if (findfile single-png)
                       (progn
-                        (jt-crop-white single-png)
+                        ;; v2.0.49: 仅白底模式裁白；原底（黑/其他）裁白会把整张图都吃掉
+                        (if (eq bg-mode "White") (jt-crop-white single-png))
                         (setq tmp-pngs (cons single-png tmp-pngs))
                         (princ (strcat "\n   √ 第 " (itoa i) "/" (itoa n) " 个出图完成")))
                       (princ (strcat "\n   × 第 " (itoa i) " 个出图失败"))))))))))))
@@ -210,6 +262,10 @@
            (jt:bg-restore bg-old)
            (if vt-old (setvar "VTENABLE" vt-old))
            (if ti-old (vl-catch-all-apply 'setvar (list "TABLEINDICATOR" ti-old)))
+           ;; v2.0.49: 恢复 cleanscreen / viewres
+           (jt:cleanscreen-restore cs-old)
+           (if (and vr-old (numberp vr-old))
+             (vl-catch-all-apply 'vl-cmdf (list "._VIEWRES" "_Y" vr-old)))
            (exit)))
 
   ;; 4. 把所有 PNG 文件路径写入剪贴板（CF_HDROP，微信粘贴=分别多张图）
@@ -237,6 +293,10 @@
   (if vt-old (setvar "VTENABLE" vt-old))
   ;; v1.1.48: 恢复表格行列指示标尺
   (if ti-old (vl-catch-all-apply 'setvar (list "TABLEINDICATOR" ti-old)))
+  ;; v2.0.49: 恢复 cleanscreen 与 VIEWRES
+  (jt:cleanscreen-restore cs-old)
+  (if (and vr-old (numberp vr-old))
+    (vl-catch-all-apply 'vl-cmdf (list "._VIEWRES" "_Y" vr-old)))
 
   (princ))
 
@@ -263,5 +323,5 @@
       (vl-file-delete tmpDwg))
     (princ "\n   × WBLOCK 临时 DWG 创建失败，跳过实体嵌入")))
 
-(princ "\n【已加载】JT 方框截图 v1.25 (紧贴选区+先ZOOM避免漏选) - 命令: JT")
+(princ "\n【已加载】JT 方框截图 v1.26 (R切换底色 + Cleanscreen提DPI) - 命令: JT")
 (princ)
