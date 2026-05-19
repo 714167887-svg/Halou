@@ -289,11 +289,24 @@ namespace HalouSuite.Payload.Jt
         }
 
         // -------- jt-plot-png --------
+        // v2.0.52: media 末尾若带 "|invert" sentinel，则出图成功后整张反色（白底黑线→黑底白线），
+        //          用于"原底/黑底"模式得到"无留黑+视觉接近 CAD 黑底"的效果。
+        //          这是为了不改 Contract/Host（常驻不可热更新）而走 in-band 通道。
         public static bool PlotPng(string outPath, double x1, double y1, double x2, double y2, string media)
         {
             try
             {
                 if (string.IsNullOrEmpty(outPath)) return false;
+                bool wantInvert = false;
+                if (!string.IsNullOrEmpty(media))
+                {
+                    const string tag = "|invert";
+                    if (media.EndsWith(tag, StringComparison.OrdinalIgnoreCase))
+                    {
+                        wantInvert = true;
+                        media = media.Substring(0, media.Length - tag.Length).Trim();
+                    }
+                }
                 if (string.IsNullOrEmpty(media)) media = "Sun Hi-Res (1600.00 x 1280.00 Pixels)";
 
                 double xmin = Math.Min(x1, x2), xmax = Math.Max(x1, x2);
@@ -362,7 +375,51 @@ namespace HalouSuite.Payload.Jt
                         try { if (File.Exists(outPath)) File.Delete(outPath); } catch { }
                     }
                 }
-                return plotOk && File.Exists(outPath);
+                return plotOk && File.Exists(outPath) && (!wantInvert || InvertPng(outPath));
+            }
+            catch { return false; }
+        }
+
+        // v2.0.52: 整张 PNG 像素反色（白↔黑、浅↔深），保留 alpha。
+        private static bool InvertPng(string pngPath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(pngPath) || !File.Exists(pngPath)) return false;
+                using (var src = new Bitmap(pngPath))
+                {
+                    int w = src.Width, h = src.Height;
+                    var rect = new Rectangle(0, 0, w, h);
+                    var data = src.LockBits(rect,
+                        System.Drawing.Imaging.ImageLockMode.ReadWrite,
+                        System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                    try
+                    {
+                        int stride = data.Stride;
+                        byte[] buf = new byte[stride * h];
+                        Marshal.Copy(data.Scan0, buf, 0, buf.Length);
+                        for (int y = 0; y < h; y++)
+                        {
+                            int row = y * stride;
+                            for (int x = 0; x < w; x++)
+                            {
+                                int p = row + x * 4;
+                                buf[p]     = (byte)(255 - buf[p]);     // B
+                                buf[p + 1] = (byte)(255 - buf[p + 1]); // G
+                                buf[p + 2] = (byte)(255 - buf[p + 2]); // R
+                                // alpha 保持
+                            }
+                        }
+                        Marshal.Copy(buf, 0, data.Scan0, buf.Length);
+                    }
+                    finally { src.UnlockBits(data); }
+                    string tmp = pngPath + ".inv.tmp.png";
+                    src.Save(tmp, System.Drawing.Imaging.ImageFormat.Png);
+                    src.Dispose();
+                    File.Delete(pngPath);
+                    File.Move(tmp, pngPath);
+                }
+                return true;
             }
             catch { return false; }
         }

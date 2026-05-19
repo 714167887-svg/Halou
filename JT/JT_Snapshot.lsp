@@ -116,7 +116,7 @@
 (defun c:JT ( / frames frame ent tp bb p1 p2 ss sub i j n
               dir full padX padY pp1 pp2 fd-old
               tmp-pngs single-png all-ents hl-ss bg-old vt-old ti-old
-              bg-mode kw cs-old vr-old)
+              bg-mode kw cs-old vr-old plot-ok plot-media)
 
   (princ "\n>>> JT 方框截图：剪贴板 + PNG 导出 <<<")
   (princ "\n  支持选多个方框：每选一个回车继续，全部选完再回车结束")
@@ -240,20 +240,21 @@
                     ;; 单图临时文件
                     (setq single-png (strcat dir "JT_" (itoa i) ".png"))
                     (if (findfile single-png) (vl-file-delete single-png))
-                    ;; v2.0.50: 白底模式优先用 jt-plot-png (PLOT API)
-                    ;;   - 按 window 精确输出，无视口"留黑/留白"问题
-                    ;;   - 1600x1280 像素，比 PNGOUT 视口截屏更高 DPI
-                    ;;   - PLOT 永远输出白底，所以仅 White 模式启用
-                    ;;   - 失败回退 PNGOUT
+                    ;; v2.0.50/v2.0.52: 都用 jt-plot-png (PLOT API) 精确出图，杜绝视口留黑/留白
+                    ;;   - White    模式：直接 PLOT 出图（白底黑线）
+                    ;;   - Original 模式：PLOT 出图后，Payload 内部按 "|invert" 标志反色（黑底白线，贴近 CAD 黑底）
+                    ;;   - 失败回退 PNGOUT（视口截屏）
                     (setq plot-ok nil)
-                    (if (eq bg-mode "White")
-                      (progn
-                        (setq plot-ok
-                          (vl-catch-all-apply 'jt-plot-png
-                            (list single-png
-                                  (car p1) (cadr p1) (car p2) (cadr p2)
-                                  "Sun Hi-Res (1600.00 x 1280.00 Pixels)")))
-                        (if (vl-catch-all-error-p plot-ok) (setq plot-ok nil))))
+                    (setq plot-media
+                      (if (eq bg-mode "White")
+                        "Sun Hi-Res (1600.00 x 1280.00 Pixels)"
+                        "Sun Hi-Res (1600.00 x 1280.00 Pixels)|invert"))
+                    (setq plot-ok
+                      (vl-catch-all-apply 'jt-plot-png
+                        (list single-png
+                              (car p1) (cadr p1) (car p2) (cadr p2)
+                              plot-media)))
+                    (if (vl-catch-all-error-p plot-ok) (setq plot-ok nil))
                     (if (not plot-ok)
                       (progn
                         ;; fallback / Original mode: PNGOUT 视口截屏
@@ -339,5 +340,5 @@
       (vl-file-delete tmpDwg))
     (princ "\n   × WBLOCK 临时 DWG 创建失败，跳过实体嵌入")))
 
-(princ "\n【已加载】JT 方框截图 v1.27 (白底PLOT高清+R切底色) - 命令: JT")
+(princ "\n【已加载】JT 方框截图 v1.28 (白底/原底均PLOT高清+原底反色) - 命令: JT")
 (princ)
