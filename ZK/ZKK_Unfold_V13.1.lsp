@@ -608,13 +608,14 @@
         fl (if (> sc 0) (nth (1- sc) fs) nil)
         r1 (if (numberp f1) (zkk:round1 f1) nil)
         rl (if (numberp fl) (zkk:round1 fl) nil))
+  ;; v1.4.1 / Payload v2.0.41: 同步 V13.lsp 的方向修复（详见 V13.lsp 注释）
   (cond
     ((and (numberp r1) (numberp rl) (>= r1 8.0) (>= rl 8.0))
      (setq hc 2 tc 3 cd 'TAIL_TO_HEAD))
     ((and (numberp r1) (numberp rl) (< r1 8.0) (>= rl 8.0))
-     (setq hc 2 tc 3 cd 'TAIL_TO_HEAD))
-    ((and (numberp r1) (numberp rl) (>= r1 8.0) (< rl 8.0))
      (setq hc 3 tc 2 cd 'HEAD_TO_TAIL))
+    ((and (numberp r1) (numberp rl) (>= r1 8.0) (< rl 8.0))
+     (setq hc 2 tc 3 cd 'TAIL_TO_HEAD))
     (T (setq hc 2 tc 3 cd 'TAIL_TO_HEAD)))
   (list (cons 'segments fs) (cons 'need-tail-insert nti)
         (cons 'head-color hc) (cons 'tail-color tc)
