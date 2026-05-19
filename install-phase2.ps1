@@ -53,12 +53,25 @@ function Resolve-ArxTag {
     if ([string]::IsNullOrWhiteSpace($acadVer)) { return $null }
     if ($acadVer -match '^R(\d+)\.(\d+)$') {
         $major = [int]$Matches[1]; $minor = [int]$Matches[2]
-        # R24.0 / R24.1 / R24.2 = acad 2021/2022/2023 -> ARX 24
-        if ($major -eq 24 -and $minor -le 2) { return 'arx24' }
+        # R24.0 / R24.1 = acad 2021/2022 -> ARX 24
+        if ($major -eq 24 -and $minor -le 1) { return 'arx24' }
+        # R24.2 = acad 2023 -> ARX 242（优先）；找不到时上层回退 arx24
+        if ($major -eq 24 -and $minor -eq 2) { return 'arx242' }
         # R24.3 = acad 2024 -> ARX 25；R25.* = acad 2025+ -> ARX 25
         if (($major -eq 24 -and $minor -ge 3) -or $major -ge 25) { return 'arx25' }
     }
     return $null
+}
+
+# 同一大版本系列 ARX 兼容回退顺序：找不到首选 tag 时按此回退
+function Get-ArxTagFallback {
+    param([string]$tag)
+    switch ($tag) {
+        'arx242' { return @('arx242', 'arx24') }
+        'arx24'  { return @('arx24') }
+        'arx25'  { return @('arx25') }
+        default  { return @($tag) }
+    }
 }
 
 function Get-InstalledAcadVersions {
@@ -277,6 +290,18 @@ Write-Host "==> 4. 部署 NEW host (HalouHost + Contract)" -ForegroundColor Cyan
 # 推断 ArxTag：未显式指定则按 AcadVersion 自动推导
 if ([string]::IsNullOrWhiteSpace($ArxTag)) {
     $ArxTag = Resolve-ArxTag $AcadVersion
+}
+
+# 按兼容回退顺序遍历可用 tag（如 arx242 找不到时退到 arx24）
+$arxCandidates = if ([string]::IsNullOrWhiteSpace($ArxTag)) { @('') } else { Get-ArxTagFallback $ArxTag }
+$resolvedTag = $null
+foreach ($t in $arxCandidates) {
+    if ([string]::IsNullOrWhiteSpace($t)) { continue }
+    if (Test-Path (Join-Path $ReleaseDir ("HalouHost." + $t + ".dll"))) { $resolvedTag = $t; break }
+}
+if ($resolvedTag -and $resolvedTag -ne $ArxTag) {
+    Write-Host "   release 中无 HalouHost.$ArxTag.dll，回退到 $resolvedTag" -ForegroundColor DarkYellow
+    $ArxTag = $resolvedTag
 }
 
 # 选 host DLL：优先用 HalouHost.<tag>.dll（多 SDK release），回退到 HalouHost.dll（单 SDK release）
