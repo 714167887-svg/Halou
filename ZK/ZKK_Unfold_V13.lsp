@@ -599,25 +599,14 @@
         fl (if (> sc 0) (nth (1- sc) fs) nil)
         r1 (if (numberp f1) (zkk:round1 f1) nil)
         rl (if (numberp fl) (zkk:round1 fl) nil))
-  ;; v1.4.1 / Payload v2.0.41: 修复规则二/三方向。
-  ;;   语义：刨槽端(短段<8mm) = 绿(3)，料端(长段>=8mm) = 黄(2)；
-  ;;   build-text 中 osegs 始终从黄端开始读，即文字左端永远是 hc=黄=2。
-  ;;   原规则二/三把短段错置为黄端，导致文字方向与展开图刷尺线颜色端不一致。
   (cond
     ((and (numberp r1) (numberp rl) (>= r1 8.0) (>= rl 8.0))
-     ;; 两端都 >= 8mm: 约定头为黄端，不反转
      (setq hc 2 tc 3 cd 'TAIL_TO_HEAD))
     ((and (numberp r1) (numberp rl) (< r1 8.0) (>= rl 8.0))
-     ;; 首 < 8 (刨槽端=绿), 尾 >= 8 (料端=黄): 黄在尾 → 反转让黄到左
-     (setq hc 3 tc 2 cd 'HEAD_TO_TAIL))
-    ((and (numberp r1) (numberp rl) (>= r1 8.0) (< rl 8.0))
-     ;; 首 >= 8 (料端=黄), 尾 < 8 (刨槽端=绿): 黄在头 → 不反转
      (setq hc 2 tc 3 cd 'TAIL_TO_HEAD))
-    (T
-     ;; 兜底（含两端均 < 8、postproc 已在末尾追加 8mm 补尾段=刨槽端=绿）
-     ;; 此时尾=8.0(补尾绿)，应 HEAD_TO_TAIL 反转让黄(原首段)到左；但兼容
-     ;; v1.1.61 历史行为（l2 末尾追加“刨槽”标记），仍保持 TAIL_TO_HEAD。
-     (setq hc 2 tc 3 cd 'TAIL_TO_HEAD)))
+    ((and (numberp r1) (numberp rl) (>= r1 8.0) (< rl 8.0))
+     (setq hc 3 tc 2 cd 'HEAD_TO_TAIL))
+    (T (setq hc 2 tc 3 cd 'TAIL_TO_HEAD)))
   (list (cons 'segments fs) (cons 'need-tail-insert nti)
         (cons 'head-color hc) (cons 'tail-color tc)
         (cons 'calc-direction cd)))
@@ -643,15 +632,14 @@
   (setq l2 (zkk:join-nums osegs "  "))
   ;; v1.1.61: 首尾都<8mm 追加的 8mm 补尾段位于 segs 末尾（cd=TAIL_TO_HEAD，不反转）→ l2 末尾添加「刨槽」标记
   (if nti (setq l2 (strcat l2 "刨槽")))
-  ;; v1.4.2 / Payload v2.0.42: l3 改为从左端（黄端）起算的运行累加 ts，与 unfold 同向
-  ;; 历史 v1.1.74 用 (raw-total - ts) → 实际是「距右端距离」，与现在 unfold 方向冲突
+  ;; v1.1.74: l3 同序输出 raw-total - cum（原始段长累加，最后 r2s 显示）
   (setq n (length osegs) i 0 ts 0.0 l3 "")
   (foreach v osegs
     (setq i (1+ i))
     (if (numberp v)
       (progn (setq ts (+ ts v))
              (if (< i n)
-               (progn (setq s (zkk:r2s ts))
+               (progn (setq s (zkk:r2s (- raw-total ts)))
                       (if (= l3 "") (setq l3 s) (setq l3 (strcat l3 "+" s))))))))
   (strcat l1 "\\P" l2 "\\P" l3))
 

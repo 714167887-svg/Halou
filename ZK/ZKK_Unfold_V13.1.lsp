@@ -608,14 +608,13 @@
         fl (if (> sc 0) (nth (1- sc) fs) nil)
         r1 (if (numberp f1) (zkk:round1 f1) nil)
         rl (if (numberp fl) (zkk:round1 fl) nil))
-  ;; v1.4.1 / Payload v2.0.41: 同步 V13.lsp 的方向修复（详见 V13.lsp 注释）
   (cond
     ((and (numberp r1) (numberp rl) (>= r1 8.0) (>= rl 8.0))
      (setq hc 2 tc 3 cd 'TAIL_TO_HEAD))
     ((and (numberp r1) (numberp rl) (< r1 8.0) (>= rl 8.0))
-     (setq hc 3 tc 2 cd 'HEAD_TO_TAIL))
-    ((and (numberp r1) (numberp rl) (>= r1 8.0) (< rl 8.0))
      (setq hc 2 tc 3 cd 'TAIL_TO_HEAD))
+    ((and (numberp r1) (numberp rl) (>= r1 8.0) (< rl 8.0))
+     (setq hc 3 tc 2 cd 'HEAD_TO_TAIL))
     (T (setq hc 2 tc 3 cd 'TAIL_TO_HEAD)))
   (list (cons 'segments fs) (cons 'need-tail-insert nti)
         (cons 'head-color hc) (cons 'tail-color tc)
@@ -640,14 +639,14 @@
   (setq l2 (zkk:join-nums osegs "  "))
   ;; v1.1.61: 补尾 8mm 段附加「刨槽」标记
   (if nti (setq l2 (strcat l2 "刨槽")))
-  ;; v1.4.2 / Payload v2.0.42: l3 改为从左端起算的运行累加 ts（与 unfold 同向）
+  ;; v1.1.74: l3 同序输出 raw-total - cum（原始段长累加，最后 r2s 显示）
   (setq n (length osegs) i 0 ts 0.0 l3 "")
   (foreach v osegs
     (setq i (1+ i))
     (if (numberp v)
       (progn (setq ts (+ ts v))
              (if (< i n)
-               (progn (setq s (zkk:r2s ts))
+               (progn (setq s (zkk:r2s (- raw-total ts)))
                       (if (= l3 "") (setq l3 s) (setq l3 (strcat l3 "+" s))))))))
   (strcat l1 "\\P" l2 "\\P" l3))
 
