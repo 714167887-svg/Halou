@@ -270,6 +270,27 @@ try {
             } else { "release v$Version`: $Message" }
             cmd /c "git -c user.email=`"release@halou.local`" -c user.name=`"halou-release-bot`" commit -m `"$commitMsg`" 2>&1" | ForEach-Object { Write-Host $_ }
             cmd /c "git push 2>&1" | ForEach-Object { Write-Host $_ }
+
+            # —— 主动 purge jsDelivr CDN（默认 12h 缓存，不 purge 客户端要等半天才看到新 license）
+            Write-Host "`n--- 主动刷新 jsDelivr CDN 缓存 ---" -ForegroundColor Cyan
+            $purgeBase = 'https://purge.jsdelivr.net/gh/714167887-svg/halou-release@main'
+            $purgePaths = @('/license.json')
+            if ($multiSdk) {
+                foreach ($tag in $ArxSdks.Keys) {
+                    $purgePaths += "/release/$(Split-Path -Leaf $payloadDlls[$tag])"
+                }
+            } else {
+                $purgePaths += "/release/$(Split-Path -Leaf $payloadDlls[''])"
+            }
+            foreach ($p in $purgePaths) {
+                try {
+                    $resp = Invoke-RestMethod -Uri ($purgeBase + $p) -Method Get -TimeoutSec 30
+                    Write-Host ("  purge OK: " + $p) -ForegroundColor Green
+                } catch {
+                    Write-Host ("  purge FAIL: " + $p + " -- " + $_.Exception.Message) -ForegroundColor Yellow
+                }
+            }
+
             Write-Host "`n=== 发布完成 v$Version ===" -ForegroundColor Green
             if ($multiSdk) {
                 foreach ($tag in $ArxSdks.Keys) {
