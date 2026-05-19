@@ -127,6 +127,18 @@ namespace HalouSuite.Payload
             {
                 LicenseEndpoint = PayloadConstants.DefaultLicenseEndpoint;
             }
+            // v2.0.51: 迁移 jsDelivr URL → raw（jsDelivr CDN purge throttle 死锁问题）
+            // 凡是指向 halou-release/license.json 的 jsDelivr URL，无论 @main 还是 @<sha>，
+            // 一律强制切到 raw.githubusercontent.com（v2.0.44 起的官方主路径）。
+            // 触发场景：客户在 v2.0.40~v2.0.43 期间装的 Payload 把 jsDelivr URL 写进了
+            // 本地 SuiteConfiguration.json；升级到 v2.0.44+ 后该字段优先于 DefaultLicenseEndpoint，
+            // 导致 license 检查仍走被 CDN 缓存锁死的 jsDelivr，面板版本号永远停在旧值。
+            else if (LicenseEndpoint.IndexOf("cdn.jsdelivr.net", StringComparison.OrdinalIgnoreCase) >= 0
+                  && LicenseEndpoint.IndexOf("halou-release", StringComparison.OrdinalIgnoreCase) >= 0
+                  && LicenseEndpoint.IndexOf("license.json", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                LicenseEndpoint = PayloadConstants.DefaultLicenseEndpoint;
+            }
         }
     }
 }
