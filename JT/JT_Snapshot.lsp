@@ -240,20 +240,36 @@
                     ;; 单图临时文件
                     (setq single-png (strcat dir "JT_" (itoa i) ".png"))
                     (if (findfile single-png) (vl-file-delete single-png))
-                    ;; v1.1.37: 暂时跳过 PlotEngine（中文 CAD 2021 报 eInvalidInput
-                    ;; 且会污染后续 PNGOUT）。直接走 PNGOUT，画质受 CAD 视口像素限。
-                    ;; 想要更清晰：把 CAD 窗口最大化、绘图区拉大。
-                    (setq fd-old (getvar "FILEDIA"))
-                    (setvar "FILEDIA" 0)
-                    (vl-catch-all-apply 'vl-cmdf (list "._PNGOUT" single-png ss ""))
-                    (setvar "FILEDIA" fd-old)
+                    ;; v2.0.50: 白底模式优先用 jt-plot-png (PLOT API)
+                    ;;   - 按 window 精确输出，无视口"留黑/留白"问题
+                    ;;   - 1600x1280 像素，比 PNGOUT 视口截屏更高 DPI
+                    ;;   - PLOT 永远输出白底，所以仅 White 模式启用
+                    ;;   - 失败回退 PNGOUT
+                    (setq plot-ok nil)
+                    (if (eq bg-mode "White")
+                      (progn
+                        (setq plot-ok
+                          (vl-catch-all-apply 'jt-plot-png
+                            (list single-png
+                                  (car p1) (cadr p1) (car p2) (cadr p2)
+                                  "Sun Hi-Res (1600.00 x 1280.00 Pixels)")))
+                        (if (vl-catch-all-error-p plot-ok) (setq plot-ok nil))))
+                    (if (not plot-ok)
+                      (progn
+                        ;; fallback / Original mode: PNGOUT 视口截屏
+                        (setq fd-old (getvar "FILEDIA"))
+                        (setvar "FILEDIA" 0)
+                        (vl-catch-all-apply 'vl-cmdf (list "._PNGOUT" single-png ss ""))
+                        (setvar "FILEDIA" fd-old)))
                     (vl-catch-all-apply 'vl-cmdf (list "._ZOOM" "_P"))
                     (if (findfile single-png)
                       (progn
-                        ;; v2.0.49: 仅白底模式裁白；原底（黑/其他）裁白会把整张图都吃掉
-                        (if (eq bg-mode "White") (jt-crop-white single-png))
+                        ;; PLOT 已精确，无需裁；仅 PNGOUT + White 才裁白
+                        (if (and (not plot-ok) (eq bg-mode "White"))
+                          (jt-crop-white single-png))
                         (setq tmp-pngs (cons single-png tmp-pngs))
-                        (princ (strcat "\n   √ 第 " (itoa i) "/" (itoa n) " 个出图完成")))
+                        (princ (strcat "\n   √ 第 " (itoa i) "/" (itoa n) " 个出图完成 "
+                                       (if plot-ok "(PLOT高清)" "(PNGOUT)"))))
                       (princ (strcat "\n   × 第 " (itoa i) " 个出图失败"))))))))))))
   (setq tmp-pngs (reverse tmp-pngs))
 
@@ -323,5 +339,5 @@
       (vl-file-delete tmpDwg))
     (princ "\n   × WBLOCK 临时 DWG 创建失败，跳过实体嵌入")))
 
-(princ "\n【已加载】JT 方框截图 v1.26 (R切换底色 + Cleanscreen提DPI) - 命令: JT")
+(princ "\n【已加载】JT 方框截图 v1.27 (白底PLOT高清+R切底色) - 命令: JT")
 (princ)
