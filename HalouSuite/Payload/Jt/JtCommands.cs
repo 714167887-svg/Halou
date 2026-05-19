@@ -292,11 +292,23 @@ namespace HalouSuite.Payload.Jt
         // v2.0.52: media 末尾若带 "|invert" sentinel，则出图成功后整张反色（白底黑线→黑底白线），
         //          用于"原底/黑底"模式得到"无留黑+视觉接近 CAD 黑底"的效果。
         //          这是为了不改 Contract/Host（常驻不可热更新）而走 in-band 通道。
+        // v2.0.54: 异常曝光到 CAD 命令行 + 设备/介质 fallback 模糊匹配（兼容中文版 AutoCAD
+        //          / 精简安装可能缺 "PublishToWeb PNG.pc3" 的情况）。
         public static bool PlotPng(string outPath, double x1, double y1, double x2, double y2, string media)
         {
+            string diagPrefix = "[jt-plot-png] ";
+            Action<string> log = (msg) =>
+            {
+                try
+                {
+                    var d = AcadApp.DocumentManager.MdiActiveDocument;
+                    if (d != null) d.Editor.WriteMessage("\n" + diagPrefix + msg);
+                }
+                catch { }
+            };
             try
             {
-                if (string.IsNullOrEmpty(outPath)) return false;
+                if (string.IsNullOrEmpty(outPath)) { log("outPath 为空"); return false; }
                 bool wantInvert = false;
                 if (!string.IsNullOrEmpty(media))
                 {
@@ -312,10 +324,11 @@ namespace HalouSuite.Payload.Jt
                 double xmin = Math.Min(x1, x2), xmax = Math.Max(x1, x2);
                 double ymin = Math.Min(y1, y2), ymax = Math.Max(y1, y2);
 
-                if (PlotFactory.ProcessPlotState != ProcessPlotState.NotPlotting) return false;
+                if (PlotFactory.ProcessPlotState != ProcessPlotState.NotPlotting)
+                { log("ProcessPlotState != NotPlotting，跳过 PLOT"); return false; }
 
                 var doc = AcadApp.DocumentManager.MdiActiveDocument;
-                if (doc == null) return false;
+                if (doc == null) { log("MdiActiveDocument == null"); return false; }
                 var db = doc.Database;
                 short bgOld = (short)AcadApp.GetSystemVariable("BACKGROUNDPLOT");
                 AcadApp.SetSystemVariable("BACKGROUNDPLOT", (short)0);
@@ -332,7 +345,17 @@ namespace HalouSuite.Payload.Jt
                         var ps = new PlotSettings(layout.ModelType);
                         ps.CopyFrom(layout);
                         var psv = PlotSettingsValidator.Current;
-                        psv.SetPlotConfigurationName(ps, "PublishToWeb PNG.pc3", media);
+
+                        // ---- 设备/介质 fallback ----
+                        string chosenDevice = ResolvePngDevice(psv, ps, log);
+                        if (string.IsNullOrEmpty(chosenDevice))
+                        { log("找不到任何 PNG 输出设备（PublishToWeb PNG.pc3 / *PNG*.pc3）"); return false; }
+                        string chosenMedia = ResolvePngMedia(psv, ps, chosenDevice, media, log);
+                        if (string.IsNullOrEmpty(chosenMedia))
+                        { log("找不到任何可用介质，原请求=" + media); return false; }
+                        try { psv.SetPlotConfigurationName(ps, chosenDevice, chosenMedia); }
+                        catch (Exception ex)
+                        { log("SetPlotConfigurationName(" + chosenDevice + "," + chosenMedia + ") 失败: " + ex.Message); return false; }
                         psv.RefreshLists(ps);
                         psv.SetPlotType(ps, Autodesk.AutoCAD.DatabaseServices.PlotType.Window);
                         psv.SetPlotWindowArea(ps,
@@ -365,7 +388,12 @@ namespace HalouSuite.Payload.Jt
                         }
                         tr.Commit();
                         plotOk = true;
+                        log("PLOT 成功 dev=" + chosenDevice + " media=" + chosenMedia + " invert=" + wantInvert);
                     }
+                }
+                catch (Exception exInner)
+                {
+                    log("内部异常: " + exInner.GetType().Name + ": " + exInner.Message);
                 }
                 finally
                 {
@@ -375,9 +403,68 @@ namespace HalouSuite.Payload.Jt
                         try { if (File.Exists(outPath)) File.Delete(outPath); } catch { }
                     }
                 }
-                return plotOk && File.Exists(outPath) && (!wantInvert || InvertPng(outPath));
+                if (!plotOk) return false;
+                if (!File.Exists(outPath)) { log("PLOT 报告成功但文件不存在: " + outPath); return false; }
+                if (wantInvert && !InvertPng(outPath)) { log("反色失败"); return false; }
+                return true;
             }
-            catch { return false; }
+            catch (Exception exOuter)
+            {
+                log("外部异常: " + exOuter.GetType().Name + ": " + exOuter.Message);
+                return false;
+            }
+        }
+
+        // 选 PNG 输出设备：优先 PublishToWeb PNG.pc3；否则任何含 "PNG" 的 .pc3
+        private static string ResolvePngDevice(PlotSettingsValidator psv, PlotSettings ps, Action<string> log)
+        {
+            const string preferred = "PublishToWeb PNG.pc3";
+            try
+            {
+                var devices = psv.GetPlotDeviceList();
+                foreach (var d in devices)
+                {
+                    if (string.Equals(d, preferred, StringComparison.OrdinalIgnoreCase)) return d;
+                }
+                foreach (var d in devices)
+                {
+                    if (d != null && d.IndexOf("PNG", StringComparison.OrdinalIgnoreCase) >= 0
+                        && d.EndsWith(".pc3", StringComparison.OrdinalIgnoreCase))
+                    { log("使用 fallback 设备: " + d); return d; }
+                }
+            }
+            catch (Exception ex) { log("GetPlotDeviceList 失败: " + ex.Message); }
+            return null;
+        }
+
+        // 选介质：优先 requested；否则任何含 "1600" 的；否则任何含 "Sun Hi-Res" 的；否则第一个
+        private static string ResolvePngMedia(PlotSettingsValidator psv, PlotSettings ps, string device, string requested, Action<string> log)
+        {
+            try
+            {
+                // 先把 device 设上才能 GetCanonicalMediaNameList
+                try { psv.SetPlotConfigurationName(ps, device, null); } catch { }
+                psv.RefreshLists(ps);
+                var medias = psv.GetCanonicalMediaNameList(ps);
+                if (medias == null || medias.Count == 0) { log("device " + device + " 无可用介质"); return null; }
+                foreach (var m in medias)
+                {
+                    if (string.Equals(m, requested, StringComparison.OrdinalIgnoreCase)) return m;
+                }
+                foreach (var m in medias)
+                {
+                    if (m != null && m.IndexOf("1600", StringComparison.Ordinal) >= 0)
+                    { log("使用 fallback 介质(含1600): " + m); return m; }
+                }
+                foreach (var m in medias)
+                {
+                    if (m != null && m.IndexOf("Sun Hi-Res", StringComparison.OrdinalIgnoreCase) >= 0)
+                    { log("使用 fallback 介质(Sun Hi-Res): " + m); return m; }
+                }
+                log("使用第一个可用介质: " + medias[0]);
+                return medias[0];
+            }
+            catch (Exception ex) { log("ResolvePngMedia 失败: " + ex.Message); return null; }
         }
 
         // v2.0.52: 整张 PNG 像素反色（白↔黑、浅↔深），保留 alpha。
