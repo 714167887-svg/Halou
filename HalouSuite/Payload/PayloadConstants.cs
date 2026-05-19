@@ -6,11 +6,13 @@ namespace HalouSuite.Payload
     /// </summary>
     internal static class PayloadConstants
     {
-        // 注意：raw.githubusercontent.com 有 ~5 分钟 CDN 缓存，且忽略 query string 强刷。
-        // 改用 jsDelivr：commit 推送后基本秒级可见，业务上等同 git HEAD。
-        // RobustHttp 仍保留 raw 作为 fallback。
+        // v2.0.44：改回 raw.githubusercontent.com 作为主路径。
+        // 原因：jsDelivr 对 @main 的缓存是 12h，purge 接口对同一文件有 ~46 分钟 throttle，
+        // 短时间内连发数版会卡住客户端拿不到新 license，造成假死锁（v2.0.41~v2.0.43 踩坑）。
+        // raw 的 CDN 缓存仅 ~5 分钟且 ?_t= cache-buster 可强刷。
+        // RobustHttp.EnumerateUrls 会自动把 raw 转 jsDelivr 镜像作为 fallback（断网/封路时仍可用）。
         public const string DefaultLicenseEndpoint =
-            "https://cdn.jsdelivr.net/gh/714167887-svg/halou-release@main/license.json";
+            "https://raw.githubusercontent.com/714167887-svg/halou-release/main/license.json";
 
         public const int MinimumRefreshSeconds = 60;
 
