@@ -618,15 +618,13 @@
 ;;   第2行: 各段长度(空格分隔)
 ;;   第3行: 累计尺寸(+分隔)
 
-(defun zkk:build-text (cfg segs pdata / th raw-total l1 l2 l3 ts s cd nti osegs n i v)
+(defun zkk:build-text (cfg segs pdata / th raw-total l1 l2 l3 ts s nti osegs n i v)
   (setq th (zkk:cg cfg 'thickness)
-        cd (cdr (assoc 'calc-direction pdata))
         nti (cdr (assoc 'need-tail-insert pdata))
-        ;; v1.1.60: l2/l3 始终从黄端开始输数
-        ;;   HEAD_TO_TAIL (绿在头) → 反转 segs，让黄端在左
-        ;;   TAIL_TO_HEAD (绿在尾) → 保持 segs 正向
-        osegs (if (eq cd 'HEAD_TO_TAIL) (reverse segs) segs)
-        ;; v1.1.74: 总长与累加链都用原始未舍入的段长，保证与 unfold 几何总长一致
+        ;; v2.0.45: l2/l3 与 unfold 同序——不再按 cd 反转 segs。
+        ;; 以前 v1.1.60 为了“从黄端起读”会 reverse，导致间隔链与展开图可能反向。
+        ;; 现在以展开图为准：osegs 总是 segs；hc/tc 仍正确指向绿/黄端。
+        osegs segs
         raw-total (apply '+ (vl-remove-if-not 'numberp osegs)))
   (setq l1 (strcat (zkk:r2sf th) "/" (zkk:r2s raw-total)))
   (setq l2 (zkk:join-nums osegs "  "))
