@@ -684,8 +684,14 @@ namespace HalouSuite.Payload
 
         internal static Bitmap RenderSuiteCatBitmap(int size)
         {
+            return RenderSuiteCatBitmap(size, false);
+        }
+
+        internal static Bitmap RenderSuiteCatBitmap(int size, bool eyesClosed)
+        {
             // v2.0.22：像素风格 —— 16x16 像素艺术模板 + NearestNeighbor 放大保留颗粒感
-            using (Bitmap source = BuildPixelCatSource16())
+            // v2.0.58：新增 eyesClosed 形态用于眨眼动画
+            using (Bitmap source = BuildPixelCatSource16(eyesClosed))
             {
                 Bitmap dest = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
                 using (Graphics g = Graphics.FromImage(dest))
@@ -702,6 +708,11 @@ namespace HalouSuite.Payload
         }
 
         private static Bitmap BuildPixelCatSource16()
+        {
+            return BuildPixelCatSource16(false);
+        }
+
+        private static Bitmap BuildPixelCatSource16(bool eyesClosed)
         {
             // 调色板（0=透明, 1=outline, 2=fur, 3=innerEar, 4=eye, 5=nose, 6=cheek, 7=highlight）
             DrawingColor[] palette = new DrawingColor[]
@@ -725,8 +736,8 @@ namespace HalouSuite.Payload
                 { 0,1,2,2,2,2,1,1,1,1,2,2,2,2,1,0 }, // y=3  耳根融入头顶
                 { 0,1,2,2,2,2,2,2,2,2,2,2,2,2,1,0 }, // y=4  额头
                 { 0,1,2,2,2,2,2,2,2,2,2,2,2,2,1,0 }, // y=5  额头
-                { 0,1,2,2,7,4,2,2,2,2,4,7,2,2,1,0 }, // y=6  眼睛上半 + 高光
-                { 0,1,2,2,4,4,2,2,2,2,4,4,2,2,1,0 }, // y=7  眼睛下半
+                { 0,1,2,2,7,4,2,2,2,2,4,7,2,2,1,0 }, // y=6  眼睛上半 + 高光（开眼）
+                { 0,1,2,2,4,4,2,2,2,2,4,4,2,2,1,0 }, // y=7  眼睛下半（开眼）
                 { 0,1,2,2,6,2,2,5,5,2,2,6,2,2,1,0 }, // y=8  腮红 + 鼻子
                 { 0,1,2,2,6,2,2,1,1,2,2,6,2,2,1,0 }, // y=9  嘴中间
                 { 0,1,2,2,2,2,1,2,2,1,2,2,2,2,1,0 }, // y=10 嘴两侧 ω
@@ -736,6 +747,13 @@ namespace HalouSuite.Payload
                 { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 }, // y=14
                 { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 }, // y=15
             };
+
+            if (eyesClosed)
+            {
+                // 闭眼：抹掉 y=6 的眼瞳/高光，y=7 用 outline 画出一条 “ - - ” 闭眼线
+                pix[6, 4] = 2; pix[6, 5] = 2; pix[6, 10] = 2; pix[6, 11] = 2;
+                pix[7, 4] = 1; pix[7, 5] = 1; pix[7, 10] = 1; pix[7, 11] = 1;
+            }
 
             Bitmap src = new Bitmap(16, 16, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             for (int y = 0; y < 16; y++)

@@ -637,8 +637,8 @@
         raw-total (apply '+ (vl-remove-if-not 'numberp osegs)))
   (setq l1 (strcat (zkk:r2sf th) "/" (zkk:r2s raw-total)))
   (setq l2 (zkk:join-nums osegs "  "))
-  ;; v1.1.61: 补尾 8mm 段附加「刨槽」标记
-  (if nti (setq l2 (strcat l2 "刨槽")))
+  ;; v1.1.61: 补尾 8mm 段附加「刨断」标记
+  (if nti (setq l2 (strcat l2 "刨断")))
   ;; v1.1.74: l3 同序输出 raw-total - cum（原始段长累加，最后 r2s 显示）
   (setq n (length osegs) i 0 ts 0.0 l3 "")
   (foreach v osegs

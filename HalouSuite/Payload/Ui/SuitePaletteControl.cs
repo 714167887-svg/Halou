@@ -294,7 +294,6 @@ namespace HalouSuite.Payload
             };
             System.Windows.Forms.PictureBox catAvatar = new System.Windows.Forms.PictureBox
             {
-                Image = HalouSuiteManager.RenderSuiteCatBitmap(48),
                 SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom,
                 Width = 48,
                 Height = 48,
@@ -302,6 +301,32 @@ namespace HalouSuite.Payload
                 BackColor = DrawingColor.Transparent
             };
             accountHeader.Controls.Add(catAvatar);
+
+            // v2.0.58：给小猫加眨眼动画 —— 睁眼 3.5s → 闭眼 140ms → 睁眼 120ms → 闭眼 140ms → ...（双眨）
+            System.Drawing.Bitmap catOpenImg = HalouSuiteManager.RenderSuiteCatBitmap(48, false);
+            System.Drawing.Bitmap catClosedImg = HalouSuiteManager.RenderSuiteCatBitmap(48, true);
+            catAvatar.Image = catOpenImg;
+            System.Windows.Forms.Timer blinkTimer = new System.Windows.Forms.Timer { Interval = 3500 };
+            int blinkPhase = 0; // 0=睁(长) 1=闭1 2=睁(短) 3=闭2
+            blinkTimer.Tick += (sender, e) =>
+            {
+                blinkPhase = (blinkPhase + 1) % 4;
+                switch (blinkPhase)
+                {
+                    case 1: catAvatar.Image = catClosedImg; blinkTimer.Interval = 140; break;
+                    case 2: catAvatar.Image = catOpenImg;   blinkTimer.Interval = 120; break;
+                    case 3: catAvatar.Image = catClosedImg; blinkTimer.Interval = 140; break;
+                    default: catAvatar.Image = catOpenImg;  blinkTimer.Interval = 3500; break;
+                }
+            };
+            blinkTimer.Start();
+            catAvatar.Disposed += (sender, e) =>
+            {
+                blinkTimer.Stop();
+                blinkTimer.Dispose();
+                catOpenImg.Dispose();
+                catClosedImg.Dispose();
+            };
 
             System.Windows.Forms.Label catTitle = new System.Windows.Forms.Label
             {
