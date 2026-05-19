@@ -160,10 +160,11 @@
                  "，底色: "
                  (if (eq bg-mode "White") "白底" "原底")))
 
-  ;; v1.1.39 / v2.0.49: 根据 bg-mode 决定是否切白底
-  ;;   "White"    → 切白底（CAD 自动反转白线为黑，PNG = 白底黑线，微信清晰）
-  ;;   "Original" → 不切，PNG 跟随用户当前 CAD 底色
-  (setq bg-old (if (eq bg-mode "White") (jt:bg-set-white) nil))
+  ;; v2.0.55: 不论 White / Original 都走"切白底 → PLOT/PNGOUT 出白底图 → crop-white"链路，
+  ;;   原底模式末尾再调 (jt-plot-png ... "invert-only") 把整张 PNG 反色为黑底白线。
+  ;;   理由：客户机若 PLOT 不可用会 fallback 到 PNGOUT 视口截屏，原底直接截屏=带视口黑边；
+  ;;        改走白底链路后 crop-white 能精确贴框，再统一反色，原底也保证贴框无留黑。
+  (setq bg-old (jt:bg-set-white))
 
   ;; v1.1.39: 临时关闭 ZOOM/VIEW 过渡动画，减少“闪屏”观感。
   (setq vt-old (getvar "VTENABLE"))
@@ -230,15 +231,11 @@
                     ;; 单图临时文件
                     (setq single-png (strcat dir "JT_" (itoa i) ".png"))
                     (if (findfile single-png) (vl-file-delete single-png))
-                    ;; v2.0.50/v2.0.52: 都用 jt-plot-png (PLOT API) 精确出图，杜绝视口留黑/留白
-                    ;;   - White    模式：直接 PLOT 出图（白底黑线）
-                    ;;   - Original 模式：PLOT 出图后，Payload 内部按 "|invert" 标志反色（黑底白线，贴近 CAD 黑底）
-                    ;;   - 失败回退 PNGOUT（视口截屏）
+                    ;; v2.0.55: 统一走"白底链路"：PLOT 优先（精确），失败回退 PNGOUT (视口截屏+crop-white)。
+                    ;;   PLOT media 不再带 "|invert"（PLOT 失败时反色无意义）；
+                    ;;   原底模式末尾对最终 PNG 调 invert-only 反色。
                     (setq plot-ok nil)
-                    (setq plot-media
-                      (if (eq bg-mode "White")
-                        "Sun Hi-Res (1600.00 x 1280.00 Pixels)"
-                        "Sun Hi-Res (1600.00 x 1280.00 Pixels)|invert"))
+                    (setq plot-media "Sun Hi-Res (1600.00 x 1280.00 Pixels)")
                     (setq plot-ok
                       (vl-catch-all-apply 'jt-plot-png
                         (list single-png
@@ -247,7 +244,7 @@
                     (if (vl-catch-all-error-p plot-ok) (setq plot-ok nil))
                     (if (not plot-ok)
                       (progn
-                        ;; fallback / Original mode: PNGOUT 视口截屏
+                        ;; fallback: PNGOUT 视口截屏（白底，便于后续 crop-white）
                         (setq fd-old (getvar "FILEDIA"))
                         (setvar "FILEDIA" 0)
                         (vl-catch-all-apply 'vl-cmdf (list "._PNGOUT" single-png ss ""))
@@ -255,12 +252,16 @@
                     (vl-catch-all-apply 'vl-cmdf (list "._ZOOM" "_P"))
                     (if (findfile single-png)
                       (progn
-                        ;; PLOT 已精确，无需裁；仅 PNGOUT + White 才裁白
-                        (if (and (not plot-ok) (eq bg-mode "White"))
-                          (jt-crop-white single-png))
+                        ;; PLOT 已精确；PNGOUT fallback 时需 crop-white 去掉视口横向白边
+                        (if (not plot-ok) (jt-crop-white single-png))
+                        ;; 原底模式：把白底 PNG 反色为黑底白线（精确贴框）
+                        (if (eq bg-mode "Original")
+                          (vl-catch-all-apply 'jt-plot-png
+                            (list single-png 0.0 0.0 0.0 0.0 "invert-only")))
                         (setq tmp-pngs (cons single-png tmp-pngs))
                         (princ (strcat "\n   √ 第 " (itoa i) "/" (itoa n) " 个出图完成 "
-                                       (if plot-ok "(PLOT高清)" "(PNGOUT)"))))
+                                       (if plot-ok "(PLOT高清)" "(PNGOUT+crop)")
+                                       (if (eq bg-mode "Original") "+反色" ""))))
                       (princ (strcat "\n   × 第 " (itoa i) " 个出图失败"))))))))))))
   (setq tmp-pngs (reverse tmp-pngs))
 

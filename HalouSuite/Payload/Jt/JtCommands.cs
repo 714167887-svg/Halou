@@ -309,6 +309,19 @@ namespace HalouSuite.Payload.Jt
             try
             {
                 if (string.IsNullOrEmpty(outPath)) { log("outPath 为空"); return false; }
+
+                // v2.0.55: invert-only 短路 —— 文件已存在时只做反色，不做 PLOT。
+                //   用途：LSP 端无论走 PLOT 还是 PNGOUT 链路出图后，原底模式统一调一次
+                //         (jt-plot-png path 0 0 0 0 "invert-only") 把白底 PNG 反色为黑底。
+                //         这样客户机 PLOT 不可用也能保证原底贴框无留黑。
+                if (string.Equals(media, "invert-only", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!File.Exists(outPath)) { log("invert-only: 文件不存在 " + outPath); return false; }
+                    bool ok = InvertPng(outPath);
+                    log("invert-only " + (ok ? "OK" : "失败") + " " + outPath);
+                    return ok;
+                }
+
                 bool wantInvert = false;
                 if (!string.IsNullOrEmpty(media))
                 {
