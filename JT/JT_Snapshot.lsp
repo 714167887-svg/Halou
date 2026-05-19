@@ -231,9 +231,7 @@
                     ;; 单图临时文件
                     (setq single-png (strcat dir "JT_" (itoa i) ".png"))
                     (if (findfile single-png) (vl-file-delete single-png))
-                    ;; v2.0.55: 统一走"白底链路"：PLOT 优先（精确），失败回退 PNGOUT (视口截屏+crop-white)。
-                    ;;   PLOT media 不再带 "|invert"（PLOT 失败时反色无意义）；
-                    ;;   原底模式末尾对最终 PNG 调 invert-only 反色。
+                    ;; v2.0.56: 固定走"白底链路"，PLOT 优先（精确），失败回退 PNGOUT (视口截屏+crop-white)。
                     (setq plot-ok nil)
                     (setq plot-media "Sun Hi-Res (1600.00 x 1280.00 Pixels)")
                     (setq plot-ok
@@ -254,14 +252,9 @@
                       (progn
                         ;; PLOT 已精确；PNGOUT fallback 时需 crop-white 去掉视口横向白边
                         (if (not plot-ok) (jt-crop-white single-png))
-                        ;; 原底模式：把白底 PNG 反色为黑底白线（精确贴框）
-                        (if (eq bg-mode "Original")
-                          (vl-catch-all-apply 'jt-plot-png
-                            (list single-png 0.0 0.0 0.0 0.0 "invert-only")))
                         (setq tmp-pngs (cons single-png tmp-pngs))
                         (princ (strcat "\n   √ 第 " (itoa i) "/" (itoa n) " 个出图完成 "
-                                       (if plot-ok "(PLOT高清)" "(PNGOUT+crop)")
-                                       (if (eq bg-mode "Original") "+反色" ""))))
+                                       (if plot-ok "(PLOT高清)" "(PNGOUT+crop)"))))
                       (princ (strcat "\n   × 第 " (itoa i) " 个出图失败"))))))))))))
   (setq tmp-pngs (reverse tmp-pngs))
 
