@@ -192,11 +192,15 @@ if (-not $DryRun) {
     }
 
     # release_notes（这个改无害，host UI 也会读）
+    # v2.0.56 hotfix: 旧实现用 `-replace '"','\"'` + `[^"]*` regex，遇到 Message 含双引号时
+    #   regex 提前在内层 \" 截断 → 残留旧 release_notes 后半段污染 license.json，
+    #   导致客户端 JSON.parse 失败，热更新永远收不到新版本。
+    # 改用 ConvertTo-Json 生成合法 JSON 字面量 + 支持 `\"` 的 regex。
     if (-not [string]::IsNullOrWhiteSpace($Message)) {
-        $safe = $Message -replace '\\','\\\\' -replace '"','\"' -replace "`r?`n",'\n'
+        $safeJson = ConvertTo-Json -InputObject $Message -Compress  # 返回带两端引号的 JSON 字面量
         $licenseText = [regex]::Replace($licenseText,
-            '"release_notes"\s*:\s*"[^"]*"',
-            "`"release_notes`": `"$safe`"")
+            '"release_notes"\s*:\s*"(?:[^"\\]|\\.)*"',
+            "`"release_notes`": $safeJson")
     }
 
     [System.IO.File]::WriteAllText($srcLicense, $licenseText, $utf8)
