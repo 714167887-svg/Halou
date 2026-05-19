@@ -7,7 +7,7 @@
   "payload_download_url": "https://cdn.jsdelivr.net/gh/714167887-svg/halou-release@main/release/HalouPayload.2.0.56.arx24.dll",
   "payload_download_url_arx25": "https://cdn.jsdelivr.net/gh/714167887-svg/halou-release@main/release/HalouPayload.2.0.56.arx25.dll",
   "payload_download_url_arx242": "https://cdn.jsdelivr.net/gh/714167887-svg/halou-release@main/release/HalouPayload.2.0.56.arx242.dll",
-  "release_notes": "feat(JT v2.0.56): 移除原底选项，JT 命令固定输出白底黑线图（更稳定、客户机无需再选）。"切白底→PLOT/PNGOUT→crop-white→invert-only\"链路，杜绝 PLOT 不可用客户机出原底图带视口黑边的留白问题。新增 JtPlotPng invert-only sentinel：传 media=invert-only 时只对已存在 PNG 反色。",
+  "release_notes": "v2.0.56: JT 命令固定输出白底黑线图（移除原底选项），更稳定。",
   "default_allowed": false,
   "kill_switch": false,
   "kill_reason": "",
