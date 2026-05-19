@@ -49,10 +49,22 @@ namespace HalouSuite.Payload
                 try
                 {
                     JavaScriptSerializer serializer = new JavaScriptSerializer();
-                    SuiteConfiguration configuration = serializer.Deserialize<SuiteConfiguration>(File.ReadAllText(path));
+                    string before = File.ReadAllText(path);
+                    SuiteConfiguration configuration = serializer.Deserialize<SuiteConfiguration>(before);
                     if (configuration != null)
                     {
                         configuration.Normalize(localManifestPath);
+                        // v2.0.53: Normalize 若改写了 LicenseEndpoint（jsDelivr→raw 等迁移），
+                        // 立即把结果回写到磁盘，避免下次重启又跳回旧 URL（v2.0.51 漏洞）。
+                        try
+                        {
+                            string after = serializer.Serialize(configuration);
+                            if (!string.Equals(before, after, StringComparison.Ordinal))
+                            {
+                                File.WriteAllText(path, after);
+                            }
+                        }
+                        catch { /* 写盘失败不致命，下次再尝试 */ }
                         return configuration;
                     }
                 }

@@ -33,19 +33,12 @@
                     (vla-get-preferences (vlax-get-acad-object))))
          (vla-put-graphicswinmodelbackgrndcolor dp old)))))
 
-;;; v2.0.49: 临时进入 CLEANSCREEN（隐藏 ribbon/工具栏/状态栏），
-;;; 让 CAD 视口面积最大化，PNGOUT 输出的像素数显著提升（视口面积↑≈ DPI↑）。
-;;; 返回旧状态：0=原本不是 cleanscreen（已切入）；1=原本就是 cleanscreen（无需切）。
-(defun jt:cleanscreen-on ( / cs)
-  (setq cs (vl-catch-all-apply 'getvar (list "CLEANSCREENSTATE")))
-  (if (vl-catch-all-error-p cs) (setq cs 0))
-  (if (zerop cs)
-    (vl-catch-all-apply 'vl-cmdf (list "._CLEANSCREENON")))
-  cs)
-
-(defun jt:cleanscreen-restore (cs-old)
-  (if (and cs-old (numberp cs-old) (zerop cs-old))
-    (vl-catch-all-apply 'vl-cmdf (list "._CLEANSCREENOFF"))))
+;;; v2.0.53: 删除 v2.0.49 引入的 CLEANSCREEN / VIEWRES bump：
+;;;   v2.0.52 起白底与原底都走 jt-plot-png (PLOT API)，按 window 精确出图，
+;;;   分辨率由 media 决定（1600x1280），与视口面积无关，VIEWRES 也无关。
+;;;   保留 cleanscreen 反而会把用户 CAD 功能区隐藏，体验糟糕。
+(defun jt:cleanscreen-on ( ) 0)
+(defun jt:cleanscreen-restore (cs-old) nil)
 
 ;;; 时间戳：yyyyMMdd_HHmmss
 (defun jt:timestamp ( / d)
@@ -183,12 +176,9 @@
   ;; 同时清掉当前选择集（被选中的表格才会显示行列条）
   (sssetfirst nil nil)
 
-  ;; v2.0.49: 进入 CLEANSCREEN 全屏 + 提高 VIEWRES，
-  ;; 让 PNGOUT 拿到的视口像素数显著提升（≈ DPI 提升）
-  (setq cs-old (jt:cleanscreen-on))
-  (setq vr-old (vl-catch-all-apply 'getvar (list "VIEWRES")))
-  (if (vl-catch-all-error-p vr-old) (setq vr-old nil))
-  (vl-catch-all-apply 'vl-cmdf (list "._VIEWRES" "_Y" 20000))
+  ;; v2.0.53: 不再调 CLEANSCREEN/VIEWRES（PLOT API 不依赖视口面积，避免隐藏功能区）
+  (setq cs-old nil)
+  (setq vr-old nil)
 
   ;; 2. 准备目录：放到系统 TEMP 下避免污染工作目录；命令开始清掉上一轮残留
   (setq dir (strcat (vl-string-right-trim "\\/" (getenv "TEMP")) "\\halou-jt\\"))
@@ -340,5 +330,5 @@
       (vl-file-delete tmpDwg))
     (princ "\n   × WBLOCK 临时 DWG 创建失败，跳过实体嵌入")))
 
-(princ "\n【已加载】JT 方框截图 v1.28 (白底/原底均PLOT高清+原底反色) - 命令: JT")
+(princ "\n【已加载】JT 方框截图 v1.29 (PLOT高清/不隐藏功能区) - 命令: JT")
 (princ)
